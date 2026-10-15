@@ -354,6 +354,17 @@ def build(op, params):
             raise _bad("sshpass is required on the host to reach the VM", "vm.no_sshpass", HTTPStatus.CONFLICT)
         return (f"VM {v['name']}: put {params['provider']} runner files inside", "vm",
                 [("copy and verify", _prepare_runner(exe, v["name"], params["provider"]), {})])
+    if op == "vm.recipe":
+        import vm_recipes
+        recipe = params.get("recipe")
+        if recipe not in vm_recipes.RECIPES:
+            raise _bad("Unknown recipe", "vm.bad_recipe")
+        v = _local(d, params.get("name"))
+        if v["running"]:
+            raise _bad("Stop the VM first", "vm.running", HTTPStatus.CONFLICT)
+        if not _sshpass():
+            raise _bad("sshpass is required on the host to reach the VM", "vm.no_sshpass", HTTPStatus.CONFLICT)
+        return (f"VM {v['name']}: recipe {recipe}", "vm", [(vm_recipes.RECIPES[recipe]["title"], vm_recipes.step(exe, v["name"], recipe), {})])
     if op == "vm.clone":
         _local(d, params.get("source"))
         _free_name(d, params.get("name"))

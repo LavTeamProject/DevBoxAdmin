@@ -31,7 +31,7 @@ tabs.vms = {
                     : btn(t("vm.start"), "vmOp", { op: "vm.start", name: v.name, confirm: t("vm.confirmStart", { name: v.name }) }, "primary")}
         ${v.running ? "" : btn(t("vm.snapshot"), "vmOp", { op: "vm.snapshot", name: v.name, confirm: t("vm.confirmSnapshot", { name: v.name }) })}
         ${btn(t("vm.clone"), "vmClone", { name: v.name })}
-        ${v.running ? "" : btn(t("vm.prepareRunner"), "vmPrepare", { name: v.name })}
+        ${v.running ? "" : btn(t("vm.prepareRunner"), "vmPrepare", { name: v.name }) + btn(t("vm.recipeBtn"), "vmRecipe", { name: v.name })}
         ${v.running || !vms.some((x) => x.snapshot_of === v.name) ? "" : btn(t("vm.restore"), "vmRestore", { name: v.name }, "danger")}
         ${v.running ? "" : btn(t("vm.delete"), "vmDelete", { name: v.name }, "danger")}
       </div></td></tr>`;
@@ -77,6 +77,10 @@ handlers.vmClone = (d) => {
 handlers.vmPrepare = (d) => {
   const provider = prompt(t("vm.prepareAsk", { name: d.name }), "gitea");
   if (provider) return vmRun("vm.prepare_runner", { name: d.name, provider });
+};
+handlers.vmRecipe = (d) => {
+  const recipe = prompt(t("vm.recipeAsk", { name: d.name }), "node");
+  if (recipe) return vmRun("vm.recipe", { name: d.name, recipe: recipe.trim() });
 };
 handlers.vmRestore = (d) => {
   const snaps = (tabs.vms.data?.drivers?.[0]?.vms || []).filter((x) => x.source === "local" && x.snapshot_of === d.name).map((x) => x.name).sort();

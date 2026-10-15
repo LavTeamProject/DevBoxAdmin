@@ -432,6 +432,8 @@ _VM = [  # id, level, title, summary, props, required
     ("vm.snapshot", "L2", "Snapshot a VM", "Copy of a stopped VM named <name>-snap-<time> (tart has no snapshots; this is a clone)", {"name": _VMN}, ["name"]),
     ("vm.prepare_runner", "L2", "Put CI runner files into a VM", "Copy the installed runner files into a STOPPED base VM over SSH (guest account admin, NAT network) and verify them; the runner is not registered",
      {"name": _VMN, "provider": {"type": "string", "enum": ["github", "gitea"]}}, ["name", "provider"]),
+    ("vm.recipe", "L2", "Prepare a VM with a recipe", "Start a STOPPED local VM, install one tool inside it over SSH (recipes: node = official Node.js LTS, clt = Command Line Tools), stop it again. Nothing Apple-ID-bound",
+     {"name": _VMN, "recipe": {"type": "string", "enum": ["node", "clt"]}}, ["name", "recipe"]),
     ("vm.restore", "L4", "Restore a VM from a snapshot", "Replace a STOPPED VM by a copy of its snapshot <name>-snap-<time>: everything done in the VM since is lost; the exact VM name is typed to confirm",
      {"name": _VMN, "snapshot": _VMN, "confirm": _confirm()}, ["name", "snapshot", "confirm"]),
     ("vm.delete", "L4", "Delete a VM", "tart delete: the VM and its disk are gone; the exact VM name is typed to confirm", {"name": _VMN, "confirm": _confirm()}, ["name", "confirm"]),

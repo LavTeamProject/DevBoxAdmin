@@ -45,8 +45,8 @@ Run without installing: `python3 server.py` (Python 3.11+).
 * [`manuals/install-clean-mac.md`](manuals/install-clean-mac.md) — install on a clean Mac (Russian)
 * [`manuals/connect-ai-agent.md`](manuals/connect-ai-agent.md) — connect an AI agent over MCP (Russian)
 * [`manuals/ci-runners.md`](manuals/ci-runners.md) — disposable CI runners in VMs (Russian)
-* [`docs/roadmap.md`](docs/roadmap.md) — what is done, what is verified, what is not
-* [`docs/unverified.md`](docs/unverified.md) — honest list of things that were *not* verified on real systems
+* [`docs/roadmap.md`](docs/en/roadmap.md) — what is done, what is verified, what is not (Russian: [`docs/roadmap.md`](docs/roadmap.md))
+* [`docs/unverified.md`](docs/en/unverified.md) — honest list of things that were *not* verified on real systems
 
 ## Security model
 
@@ -60,7 +60,7 @@ Run without installing: `python3 server.py` (Python 3.11+).
 ## Status
 
 Verified on a real Mac, in clean macOS VMs (tart) and against a throw-away Gitea 28. **Not verified:** GitHub Actions runners,
-Codex/OpenCode/Gemini as MCP clients, an Xcode VM image — see [`docs/unverified.md`](docs/unverified.md).
+Codex/OpenCode/Gemini as MCP clients, an Xcode VM image — see [`docs/unverified.md`](docs/en/unverified.md).
 
 ## Credits
 

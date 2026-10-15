@@ -1,155 +1,154 @@
 # CLAUDE.md
 
-Panduan untuk Claude saat bekerja di repo ini.
+Guide for Claude when working in this repo.
 
-**Bahasa — aturan keras:**
+**Language — hard rules:**
 
-- **UI hanya punya DUA bahasa: Rusia (default) dan Inggris.** Kamusnya ada di `static/i18n.js`
-  (`I18N.ru` dan `I18N.en`). **Jangan menambahkan bahasa ketiga**, dan jangan mengembalikan kamus `id`
-  yang sudah dihapus. Kedua kamus harus selalu lengkap sama (jumlah kuncinya identik).
-- **Teks UI baru wajib lewat `t("kunci")`**, bukan string langsung. Kalau kuncinya belum ada,
-  tambahkan ke **kedua** kamus sekaligus.
-- **Komentar kode: Bahasa Indonesia** (warisan repo, belum dimigrasi). Ini keputusan yang belum
-  diambil — jangan mengubah bahasa komentar secara massal tanpa diminta.
-- **Pesan yang dicetak skrip shell (`install.sh`, `uninstall.sh`, `fetch-python.sh`) juga hanya Rusia (default) / Inggris:** pakai `msg "ru" "en"` (bahasa Inggris jika `SA_LANG=en` atau `LANG=en*`). Dilarang pesan berbahasa Indonesia untuk pengguna.
-- **Pesan error backend: `ApiError(pesan_Rusia, status, code="modul.slug", **params)`.** `pesan` = teks Rusia
-  (default + cadangan); `code`+`params` diterjemahkan frontend lewat kunci `err.<code>` (kamus `ru` dan `en`,
-  `{param}` sebagai pengganti). Jangan menulis `ApiError` tanpa `code`. **Jangan beri `code` pada pesan yang
-  hanya berupa cadangan dari stderr alat** — pakai `code=None if err.strip() else "x.y"` supaya teks asli
-  tidak tertimpa. Jangan mencocokkan `e.message` di JS: pakai `e.code`.
-- **Kamus tambahan:** selain `static/i18n.js`, ada `static/i18n-ext-<area>.js` (`Object.assign(I18N.ru, {...})` dan
-  `Object.assign(I18N.en, {...})`) — satu berkas per area supaya pekerjaan paralel tidak bentrok. Cek paritas
-  dan kunci kosong dengan **`node check-i18n.js`** (wajib lulus: jumlah kunci `ru` = `en`).
-- **Galat alat yang tidak ada** (brew, docker, …) → `FileNotFoundError` jadi `tool_missing` (kartu "Tidak
-  ditemukan alat" dengan tautan ke Persiapan Sistem); keluaran JSON kosong/rusak dari alat → pakai
-  `core.loads_or(teks, default)`, bukan `json.loads` langsung (jatuh jadi `bad_output`, bukan "Internal error").
-- Katalog paket (`svc.py`) berbahasa Rusia di sumbernya; terjemahan EN-nya per teks di `static/i18n-ext-catalog.js`
-  (kunci `cd.<teks Rusia>`; `catTr()` di `packages.js`). Tambah entri katalog baru → tambah juga terjemahannya.
+- **The UI has only TWO languages: Russian (default) and English.** The dictionaries are in `static/i18n.js`
+  (`I18N.ru` and `I18N.en`). **Do not add a third language**, and do not bring back the `id` dictionary
+  that was removed. Both dictionaries must always be fully identical (identical key counts).
+- **New UI text must go through `t("key")`**, not literal strings. If the key does not exist yet,
+  add it to **both** dictionaries at once.
+- **Code comments: Indonesian** (a repo legacy, not yet migrated). This is a decision that has not
+  been made — do not change the comment language in bulk unless asked.
+- **Messages printed by shell scripts (`install.sh`, `uninstall.sh`, `fetch-python.sh`) are also only Russian (default) / English:** use `msg "ru" "en"` (English if `SA_LANG=en` or `LANG=en*`). Indonesian-language messages for the user are forbidden.
+- **Backend error messages: `ApiError(russian_message, status, code="module.slug", **params)`.** `message` = Russian text
+  (default + fallback); `code`+`params` are translated by the frontend via the key `err.<code>` (`ru` and `en` dictionaries,
+  `{param}` as the placeholder). Do not write an `ApiError` without a `code`. **Do not give a `code` to messages that
+  are only a fallback from a tool's stderr** — use `code=None if err.strip() else "x.y"` so the original text
+  is not overwritten. Do not match `e.message` in JS: use `e.code`.
+- **Additional dictionaries:** besides `static/i18n.js`, there are `static/i18n-ext-<area>.js` (`Object.assign(I18N.ru, {...})` and
+  `Object.assign(I18N.en, {...})`) — one file per area so parallel work does not collide. Check parity
+  and empty keys with **`node check-i18n.js`** (must pass: number of `ru` keys = `en`).
+- **Missing-tool errors** (brew, docker, …) → `FileNotFoundError` becomes `tool_missing` (a "Tool not
+  found" card with a link to System Setup); empty/broken JSON output from a tool → use
+  `core.loads_or(text, default)`, not `json.loads` directly (falls back to `bad_output`, not "Internal error").
+- The package catalog (`svc.py`) is in Russian at the source; its EN translation is per text in `static/i18n-ext-catalog.js`
+  (key `cd.<Russian text>`; `catTr()` in `packages.js`). Adding a new catalog entry → also add its translation.
 
 
-## Keputusan arsitektur — FINAL, jangan diragukan lagi
+## Architecture decisions — FINAL, do not doubt them again
 
-Ini sudah diputuskan pemilik project. Jangan mengusulkan ulang alternatif yang sudah ditolak di sini.
+These have been decided by the project owner. Do not re-propose alternatives that were rejected here.
 
-1. **Panel harus bisa dipasang di macOS yang BARU diinstal, tanpa apa pun sebelumnya.**
-   Itu tujuan produknya: satu panel yang menyiapkan dan mengendalikan seluruh Mac. Kalau ada langkah
-   yang tidak bisa dilakukan dari dalam panel, langkah itu wajib dicatat sebagai **pengecualian yang
-   disengaja** beserta alasannya (mis. dialog Apple untuk Command Line Tools, Apple ID untuk Xcode).
-2. **Runtime Python DI-BUNDEL, bukan diambil dari sistem.** Panel tidak boleh bergantung pada Python
-   bawaan macOS (di macOS bersih tidak ada Python sama sekali; Command Line Tools hanya memberi 3.9).
-   `install.sh` mengunduh CPython standalone dari `python-build-standalone` (~25 MB, sudah terbukti
-   tersedia: `cpython-3.12.x+<tanggal>-aarch64-apple-darwin-install_only.tar.gz`) ke
-   `~/.service-admin/runtime/python/`. **Jangan menambah ketergantungan baru pada alat sistem.**
-3. **Launcher tidak boleh membutuhkan Command Line Tools.** Pakai `/usr/bin/osacompile` (bagian dari
-   macOS), **bukan `swiftc`** — `swiftc` berasal dari CLT dan itu justru prasyarat yang mau dihilangkan.
-   Yang boleh diasumsikan ada di macOS bersih hanya: `curl`, `tar`, `osacompile`, `open`, `osascript`.
-4. **"Tanpa kostum" lebih penting daripada cepat.** Kerjakan langsung ke bentuk yang benar; jangan
-   menambah jembatan sementara (mis. menggantungkan diri pada Python 3.9 bawaan Apple) yang nanti harus
-   dibongkar lagi.
-5. **`tomllib` DIIZINKAN punya jalur cadangan.** Pemilik project memberi izin eksplisit: tulis
-   `tomllib` → `tomli` → nonaktifkan validasi TOML dengan pesan yang jelas. Ini murni pertahanan untuk
-   kasus seseorang menjalankan `python3 server.py` dengan interpreter lama; jalur utama tetap Python
-   yang dibundel. Jangan menghapus validasi TOML-nya, cukup mundur dengan pesan yang jujur.
-   Saat ini hanya `files.py` (3 baris: `import tomllib`, `tomllib.loads`, `tomllib.TOMLDecodeError`)
-   yang membutuhkan 3.11 — tidak ada fitur 3.11+ lain di seluruh repo.
-6. **Verifikasi instalasi/first-run dilakukan di VM macOS bersih (tart), bukan di mesin kerja** (keputusan
-   pemilik project, diperbarui). Rinciannya di `docs/roadmap.md` bagian "Verifikasi di macOS bersih".
+1. **The panel must be installable on a FRESHLY installed macOS, with nothing beforehand.**
+   That is the product goal: one panel that prepares and controls the whole Mac. If there is a step
+   that cannot be done from inside the panel, that step must be recorded as an **intentional exception**
+   together with the reason (e.g. the Apple dialog for Command Line Tools, Apple ID for Xcode).
+2. **The Python runtime is BUNDLED, not taken from the system.** The panel must not depend on the
+   Python bundled with macOS (a clean macOS has no Python at all; Command Line Tools only provide 3.9).
+   `install.sh` downloads standalone CPython from `python-build-standalone` (~25 MB, already proven
+   available: `cpython-3.12.x+<date>-aarch64-apple-darwin-install_only.tar.gz`) to
+   `~/.service-admin/runtime/python/`. **Do not add new dependencies on system tools.**
+3. **The launcher must not require Command Line Tools.** Use `/usr/bin/osacompile` (part of
+   macOS), **not `swiftc`** — `swiftc` comes from CLT and that is exactly the prerequisite we want to remove.
+   The only things that may be assumed to exist on a clean macOS are: `curl`, `tar`, `osacompile`, `open`, `osascript`.
+4. **"No workarounds" matters more than speed.** Go straight to the correct form; do not
+   add temporary bridges (e.g. relying on Apple's bundled Python 3.9) that will have to be torn down later.
+5. **`tomllib` IS ALLOWED to have a fallback path.** The project owner gave explicit permission: write
+   `tomllib` → `tomli` → disable TOML validation with a clear message. This is purely a defense for
+   the case where someone runs `python3 server.py` with an old interpreter; the main path remains the
+   bundled Python. Do not remove the TOML validation, just fall back with an honest message.
+   Currently only `files.py` (3 lines: `import tomllib`, `tomllib.loads`, `tomllib.TOMLDecodeError`)
+   needs 3.11 — there are no other 3.11+ features in the whole repo.
+6. **Install/first-run verification is done in a clean macOS VM (tart), not on the work machine** (the
+   project owner's decision, updated). Details are in `docs/roadmap.md` (English: `docs/en/roadmap.md`), section "Проверка на чистой macOS" / "Verification on clean macOS".
 
-## Apa ini
+## What this is
 
-**Mac Service Admin**: dashboard web lokal untuk mengelola dev environment macOS (Apple Silicon):
-Homebrew (paket + `brew services`), Docker/OrbStack, Laravel Herd, versi bahasa (PHP, Node, Python, Go,
-Rust, Java, Ruby, …), file konfigurasi (zsh, `/etc/hosts`, SSH, Git, php.ini, `.env`), dan statistik
-sistem (CPU, RAM, suhu, GPU, baterai).
+**Mac Service Admin**: a local web dashboard for managing a macOS (Apple Silicon) dev environment:
+Homebrew (packages + `brew services`), Docker/OrbStack, Laravel Herd, language versions (PHP, Node, Python, Go,
+Rust, Java, Ruby, …), configuration files (zsh, `/etc/hosts`, SSH, Git, php.ini, `.env`), and system
+statistics (CPU, RAM, temperature, GPU, battery).
 
 ```bash
-python3 server.py            # http://127.0.0.1:8765  (--port untuk ganti)
+python3 server.py            # http://127.0.0.1:8765  (--port to change)
 ```
 
-## Aturan utama
+## Main rules
 
-- **Stdlib saja, tanpa dependensi.** Backend Python murni (http.server, subprocess, ctypes); frontend
-  vanilla JS/CSS tanpa build step, tanpa CDN (ikon disimpan lokal di `static/icons.js`).
-- **Keamanan (jangan dilonggarkan):**
-  - Server hanya bind `127.0.0.1`; header `Host` wajib `localhost`/`127.0.0.1` (anti DNS rebinding).
-  - Semua POST wajib header `X-Requested-With: service-admin` (anti CSRF). `api()` di `app.js` sudah
-    mengirimnya.
-  - Perintah dijalankan sebagai **list argumen, tanpa shell**. Validasi setiap input (nama paket,
-    versi, id container, hostname, port) dengan regex sebelum dipakai.
-  - File hanya boleh dibaca/ditulis lewat **registry** (`files.py`, `svc.service_spec`, compose dari
-    `docker compose ls`), jangan pernah path bebas dari browser.
-  - Jangan kirim rahasia ke browser tanpa perlu: `herd sites --json` berisi isi `.env`, jadi field
-    `env` dibuang di `herd_info()`. Env container disamarkan di UI (`SECRET_RE` di `dockerx.py`).
-  - File milik root (`/etc/hosts`, `/etc/resolver/*`) ditulis lewat
-    `osascript ... with administrator privileges` (dialog password macOS), bukan sudo.
-- **Sebelum menimpa file user: validasi + backup.** Pola yang dipakai: validasi dulu (atau tulis →
-  validasi → rollback kalau gagal), backup ke `~/.service-admin/backups/...`, simpan 20 versi.
-- Aksi yang merusak (uninstall, hapus volume, prune, down) wajib `data-confirm` di tombolnya.
-- **FASE 1 = hanya baca** (pengecualian sempit: `projects.py` boleh menulis `~/.service-admin/projects.json` — registry & preset — lewat `registry_add/registry_remove/preset_set`; git tetap hanya baca). `profiles.py`, `mobile.py`, `projects.py`, dan `agents.py` **tidak boleh**
-  memasang, mengunduh, mengubah, atau menghentikan apa pun. Kalau nanti ditambah tombol aksi
-  (mis. `brew install`, `xcode-select -s`, `git worktree add`, menjalankan agen), aksi itu wajib:
-  lewat `start_job`/`start_steps`, punya `data-confirm` di UI, dan tidak boleh menyentuh sistem tanpa
-  permintaan eksplisit user. Jangan pernah menaikkan `--no-rename`/timeout diam-diam untuk "mempercepat".
-- **Jangan menambah dependensi.** Fase 1 sengaja tidak memakai satu pun paket baru.
-- **Panduan untuk manusia (instruksi + screenshot) disimpan di `manuals/`** (lihat `manuals/README.md`); screenshot hanya dari sistem asli (VM tart/Mac), tanpa data pribadi, format JPEG yang sudah dipangkas. Jangan memasukkan jendela/aplikasi pengguna lain ke screenshot.
-- **Rencana kerja ada di `docs/roadmap.md`.** Sebelum mengerjakan fitur baru, periksa dokumen itu:
-  kalau itemnya belum ada di sana, jangan dikerjakan — usulkan dulu perubahan dokumennya.
-  Urutan Fase 2 mengikat: **2.0 Bootstrap mandiri → 2.1 Halaman Persiapan Sistem → 2.2 Jejak audit**,
-  dan baru setelah ketiganya selesai boleh ada aksi yang mengubah sistem (2.3 dan seterusnya).
-  Audit bukan pelengkap: panel akan memasang Homebrew dan meminta sandi admin, jadi tanpa jejak audit
-  tidak ada cara menjawab "apa yang tadi dijalankan?".
+- **Stdlib only, no dependencies.** Pure Python backend (http.server, subprocess, ctypes); vanilla JS/CSS
+  frontend with no build step, no CDN (icons are stored locally in `static/icons.js`).
+- **Security (do not loosen):**
+  - The server binds only to `127.0.0.1`; the `Host` header must be `localhost`/`127.0.0.1` (anti DNS rebinding).
+  - All POSTs require the header `X-Requested-With: service-admin` (anti CSRF). `api()` in `app.js` already
+    sends it.
+  - Commands run as an **argument list, without a shell**. Validate every input (package name,
+    version, container id, hostname, port) with a regex before use.
+  - Files may only be read/written through a **registry** (`files.py`, `svc.service_spec`, compose from
+    `docker compose ls`), never a free path from the browser.
+  - Do not send secrets to the browser unless necessary: `herd sites --json` contains the contents of `.env`, so the
+    `env` field is dropped in `herd_info()`. Container env is masked in the UI (`SECRET_RE` in `dockerx.py`).
+  - Root-owned files (`/etc/hosts`, `/etc/resolver/*`) are written through
+    `osascript ... with administrator privileges` (the macOS password dialog), not sudo.
+- **Before overwriting a user file: validate + back up.** The pattern used: validate first (or write →
+  validate → roll back on failure), back up to `~/.service-admin/backups/...`, keep 20 versions.
+- Destructive actions (uninstall, delete volume, prune, down) must have `data-confirm` on their button.
+- **PHASE 1 = read-only** (narrow exception: `projects.py` may write `~/.service-admin/projects.json` — registry & presets — via `registry_add/registry_remove/preset_set`; git remains read-only). `profiles.py`, `mobile.py`, `projects.py`, and `agents.py` **must not**
+  install, download, change, or stop anything. If action buttons are added later
+  (e.g. `brew install`, `xcode-select -s`, `git worktree add`, running agents), those actions must:
+  go through `start_job`/`start_steps`, have `data-confirm` in the UI, and must not touch the system without an
+  explicit user request. Never silently raise `--no-rename`/timeouts to "speed things up".
+- **Do not add dependencies.** Phase 1 deliberately uses not a single new package.
+- **Guides for humans (instructions + screenshots) are kept in `manuals/`** (see `manuals/README.md`); screenshots only from a real system (tart VM/Mac), without personal data, in trimmed JPEG format. Do not include other users' windows/applications in screenshots.
+- **The work plan is in `docs/roadmap.md`.** Before working on a new feature, check that document:
+  if the item is not there, do not work on it — first propose a change to the document.
+  The Phase 2 order is binding: **2.0 Standalone Bootstrap → 2.1 System Setup page → 2.2 Audit trail**,
+  and only after all three are done may there be actions that change the system (2.3 and onwards).
+  Audit is not an add-on: the panel will install Homebrew and ask for the admin password, so without an audit trail
+  there is no way to answer "what was just run?".
 
-## Aturan dari pengujian di macOS bersih (VM tart)
+## Rules from testing on clean macOS (tart VM)
 
-- **Menyalin repo ke VM: JANGAN lewat `tar` dari folder bersama** (`/Volumes/My Shared Files`) — diam-diam terpotong dan VM
-  menerima salinan tidak lengkap. Pakai aliran SSH (`tar -cf - . | ssh … tar -xf -`) lalu **bandingkan `shasum` semua berkas**.
+- **Copying the repo to the VM: do NOT use `tar` from the shared folder** (`/Volumes/My Shared Files`) — it silently gets truncated and the VM
+  receives an incomplete copy. Use an SSH stream (`tar -cf - . | ssh … tar -xf -`) and then **compare the `shasum` of all files**.
 
-- **`/usr/bin/git`, `python3`, `make`, `xcrun`, dll. tanpa CLT = stub yang membuka dialog Apple.**
-  Jangan pernah memanggilnya langsung. `core.run()` sudah menolak menjalankannya (lihat `CLT_SHIMS`,
-  `clt_stub()`); `Popen` langsung di job tidak terlindungi, jadi cek `has_clt()` sendiri.
-  `install.sh` juga hanya memanggil `git` kalau `xcode-select -p` berhasil.
-- **LaunchAgent memicu dialog izin macOS** (Documents, Desktop) pada pemakaian pertama; request yang
-  menyentuh folder itu menggantung sampai user menekan Izinkan. Itu bukan bug panel.
-- Pengujian instalasi dilakukan di VM `clean-mac` (tart), bukan di mesin kerja — lihat roadmap
-  "Verifikasi di macOS bersih". Disk VM 50 GB tidak cukup untuk dialog CLT Apple (butuh ~24 GB bebas).
+- **`/usr/bin/git`, `python3`, `make`, `xcrun`, etc. without CLT = stubs that open an Apple dialog.**
+  Never call them directly. `core.run()` already refuses to run them (see `CLT_SHIMS`,
+  `clt_stub()`); a direct `Popen` in a job is not protected, so check `has_clt()` yourself.
+  `install.sh` also calls `git` only if `xcode-select -p` succeeds.
+- **A LaunchAgent triggers macOS permission dialogs** (Documents, Desktop) on first use; requests
+  touching those folders hang until the user presses Allow. That is not a panel bug.
+- Install testing is done in the `clean-mac` VM (tart), not on the work machine — see the roadmap
+  "Verification on clean macOS". The 50 GB VM disk is not enough for the Apple CLT dialog (needs ~24 GB free).
 
-## Yang sudah terbukti di mesin nyata (jangan diulang salah)
+## What has been proven on a real machine (do not repeat the mistakes)
 
-Empat hal ini ditemukan lewat pengukuran di Mac asli, dan semuanya mudah terulang:
+These four things were found by measuring on a real Mac, and all are easy to repeat:
 
-1. **`python3` bisa 3.9.** `files.py` mengimpor `tomllib` (≥ 3.11). Di Mac yang Python 3.11+ hanya ada
-   di Homebrew, `python3 server.py` gagal dengan `ModuleNotFoundError: tomllib`. Uji dulu `python3 -V`;
-   interpreteter eksplisit: `/opt/homebrew/opt/python@3.12/bin/python3.12 server.py`.
-   **Arah perbaikannya sudah diputuskan** (lihat "Keputusan arsitektur"): runtime Python di-bundel,
-   jadi masalah ini hilang di jalur utama; jalur cadangan `tomllib → tomli` tetap ditulis sebagai
-   pertahanan. Jangan menambah ketergantungan baru pada Python sistem untuk "menyelesaikan" ini.
-2. **`git` paralel saling mengunci.** `git status`/`git diff` biasanya mengambil `.git/index.lock`.
-   Kalau beberapa perintah baca dijalankan bersamaan di repo yang sama (dan `project_detail` memang
-   menjalankan 9 sekaligus), satu perintah bisa menggantung **30 detik**. Karena itu `projects.git()`
-   selalu memakai `GIT_OPTIONAL_LOCKS=0` (dan `GIT_PAGER=cat`, `GIT_TERMINAL_PROMPT=0`).
-3. **`git diff` tanpa `--no-renames` itu mahal.** Deteksi rename memaksa git membaca isi setiap berkas
-   yang berubah: diukur **10–25 detik** vs **0,03 detik** dengan `--no-renames`. Semua diff di
-   `projects.py` memakai `--no-renames`. Efek sampingnya hanya: rename tampil sebagai hapus+tambah.
-4. **`--stat`/`--numstat` tetap lambat walau tanpa rename**, karena tetap menghitung baris. Karena itu
-   daftar berkas di halaman detail memakai `--name-status` (0,06 dtk), dan statistik baris (+/-) hanya
-   dihitung saat user menekan tombolnya (`/api/projects/diffstat`, timeout 90 dtk).
+1. **`python3` may be 3.9.** `files.py` imports `tomllib` (≥ 3.11). On a Mac where Python 3.11+ exists only
+   in Homebrew, `python3 server.py` fails with `ModuleNotFoundError: tomllib`. Test `python3 -V` first;
+   explicit interpreter: `/opt/homebrew/opt/python@3.12/bin/python3.12 server.py`.
+   **The direction of the fix has been decided** (see "Architecture decisions"): the Python runtime is bundled,
+   so this problem disappears on the main path; the `tomllib → tomli` fallback path is still written
+   as a defense. Do not add new dependencies on system Python to "solve" this.
+2. **Parallel `git` processes lock each other.** `git status`/`git diff` usually take `.git/index.lock`.
+   If several read commands run at the same time in the same repo (and `project_detail` does run 9
+   at once), one command can hang for **30 seconds**. That is why `projects.git()`
+   always uses `GIT_OPTIONAL_LOCKS=0` (and `GIT_PAGER=cat`, `GIT_TERMINAL_PROMPT=0`).
+3. **`git diff` without `--no-renames` is expensive.** Rename detection forces git to read the contents of every
+   changed file: measured at **10–25 seconds** vs **0.03 seconds** with `--no-renames`. All diffs in
+   `projects.py` use `--no-renames`. The only side effect: a rename shows up as delete+add.
+4. **`--stat`/`--numstat` are still slow even without renames**, because they still count lines. That is why
+   the file list on the detail page uses `--name-status` (0.06 s), and line statistics (+/-) are only
+   computed when the user presses the button (`/api/projects/diffstat`, 90 s timeout).
 
-Selain itu:
+In addition:
 
-- **`flutter --version` menulis ke cache SDK.** Panel **tidak pernah** menjalankannya; versi dibaca dari
-  `bin/cache/flutter.version.json`. Kalau butuh versi Flutter di kode baru, pakai jalur berkas itu.
-- **Kartu daftar project sengaja tidak memuat ringkasan git di server.** Satu repo besar bisa menahan
-  seluruh halaman. `/api/projects` hanya mengembalikan path (0,01 dtk), lalu browser memanggil
-  `/api/projects/summary?path=…` per kartu secara paralel dan mengisinya sendiri. Jangan menyatukan lagi.
-- **`xcrun simctl` menyalakan CoreSimulatorService** kalau belum jalan. Itu layanan bawaan Apple, bukan
-  perubahan setelan — tapi tetap bukan "nol efek samping", jadi jangan panggil di loop ketat.
-- **`ps` bisa diblokir** (sandbox, kebijakan MDM). `core.ps_snapshot()` dan `agents._read_ps()`
-  mengembalikan kosong kalau `ps` gagal; halaman AI Sessions menampilkan peringatan, bukan error.
+- **`flutter --version` writes to the SDK cache.** The panel **never** runs it; the version is read from
+  `bin/cache/flutter.version.json`. If you need the Flutter version in new code, use that file path.
+- **The project list cards deliberately do not include the git summary on the server.** One large repo can hold up
+  the whole page. `/api/projects` returns only paths (0.01 s), then the browser calls
+  `/api/projects/summary?path=…` per card in parallel and fills them in itself. Do not merge them back together.
+- **`xcrun simctl` starts CoreSimulatorService** if it is not running. That is a built-in Apple service, not a
+  settings change — but it is still not "zero side effects", so do not call it in a tight loop.
+- **`ps` can be blocked** (sandbox, MDM policy). `core.ps_snapshot()` and `agents._read_ps()`
+  return empty if `ps` fails; the AI Sessions page shows a warning, not an error.
 
 ## i18n
 
-**Dua bahasa saja: `ru` (default) dan `en`.** Kamusnya di `static/i18n.js`, tanpa build step.
-Kedua kamus harus **lengkap sama** (jumlah kuncinya identik). Uji dengan:
+**Two languages only: `ru` (default) and `en`.** The dictionaries are in `static/i18n.js`, no build step.
+Both dictionaries must be **fully identical** (identical key counts). Test with:
 
 ```bash
 node -e "const fs=require('fs');const s=fs.readFileSync('static/i18n.js','utf8');
@@ -157,124 +156,124 @@ const i=s.indexOf('const I18N = {')+13;const I=eval('('+s.slice(i,s.indexOf('\n}
 const k=Object.keys(I.ru);for(const [l,d] of Object.entries(I))console.log(l,k.filter(x=>!(x in d)));"
 ```
 
-- HTML statis: `data-i18n` (innerHTML), `data-i18n-title`, `data-i18n-ph`, `data-i18n-aria`, `data-i18n-label`.
-- JS: `t("kunci")`, dengan pengganti `t("kunci", {n: 3})` → `{n}` di kamus.
-- Fallback: kamus aktif → `I18N.ru` → kunci itu sendiri. Tidak ada bahasa ketiga sebagai cadangan.
-- Judul halaman: `tabs.<key>.titleKey` (mis. `"nav.projects"`), bukan `title` yang berisi prosa.
-- Setelah `setLang()`, halaman aktif dirender ulang otomatis dan `updatePageTitle()` dipanggil ulang.
-- Semua halaman (termasuk packages/config/docker/langs/dashboard/app) sudah memakai `t()`; teks yang dihitung
-  di modul harus dicari saat render (di dalam fungsi), bukan disimpan di konstanta tingkat-modul.
+- Static HTML: `data-i18n` (innerHTML), `data-i18n-title`, `data-i18n-ph`, `data-i18n-aria`, `data-i18n-label`.
+- JS: `t("key")`, with placeholders `t("key", {n: 3})` → `{n}` in the dictionary.
+- Fallback: active dictionary → `I18N.ru` → the key itself. There is no third language as a fallback.
+- Page title: `tabs.<key>.titleKey` (e.g. `"nav.projects"`), not a `title` containing prose.
+- After `setLang()`, the active page is re-rendered automatically and `updatePageTitle()` is called again.
+- All pages (including packages/config/docker/langs/dashboard/app) already use `t()`; text computed
+  in a module must be looked up at render time (inside a function), not stored in module-level constants.
 
-## Struktur
+## Structure
 
-| File | Isi |
+| File | Contents |
 |---|---|
-| `server.py` | HANYA HTTP handler + routing (`GET_ROUTES` / `POST_ROUTES` di bawah file); logika domain ada di modul (`brewsvc`, `herdphp`, `uihelpers`, `dockerx`, `files`, …). Jangan menaruh logika baru di server.py |
-| `brewsvc.py` | Службы (`brew services`) и пакеты Homebrew: список, поиск, действия (изменения пакетов исполняет `operations.run_package`). Вынесено из server.py |
-| `herdphp.py` | Herd, версии PHP, Node/nvm, создание Laravel-проекта, `EDITORS`. Вынесено из server.py; изменяющие функции вызывает и каталог операций |
-| `uihelpers.py` | Боковая панель (`nav_info`), чтение файла для диагностики, открыть Terminal/Activity Monitor, детали проекта |
-| `ops_system.py` | Каталог операций над системой (службы, PHP/Herd/Node, языки, Docker, файлы) — регистрируется в `operations.OPS`; исполняет те же функции, что страница; агентам НЕ открыто |
-| `core.py` | Helper bersama: `run`/`output`, `ApiError`, state (`~/.service-admin/state.json`), **job** background (`start_job`, `start_steps` multi-langkah, `list_jobs`), backup & blok `.zshrc`, `set_shims`/`set_env`, `shell_probe` |
-| `stats.py` | Statistik sistem tanpa sudo: CPU per core (Mach `host_processor_info`), suhu (IOKit HID via ctypes), GPU/baterai (`ioreg`), RAM (`vm_stat`), sampler background |
-| `runtimes.py` | Deteksi bahasa (`LANGS`) + manajemen Python/Go/Rust/Java/Ruby |
-| `svc.py` | Detail service (config file + validator per service), katalog & 100 rekomendasi paket, panel cloudflared |
-| `files.py` | Editor file konfigurasi: registry `STATIC` + resolver, php.ini, `.env` project; validator per jenis |
-| `dockerx.py` | Docker: overview, stats, disk, inspect, logs, exec console, `docker run`, compose (baca/validasi/simpan), context remote |
-| `ptyterm.py` | Terminal sungguhan: sesi `zsh -l -i` di PTY (`pty.fork`), output long-poll (`/api/pty/read`, base64), input/resize/kill lewat POST, plus `peek` (pratinjau tanpa menggeser offset) |
-| `setup.py` | **Persiapan Sistem** (`#setup`): status CLT/Homebrew/Git/Python bawaan + instalasi CLT (dialog Apple, panel menunggu) dan Homebrew (installer resmi, `SUDO_ASKPASS` → dialog password macOS). Lewat `start_steps`, tercatat di audit |
-| `snapshots.py` | Snapshot lingkungan (`#snapshots`): `~/.service-admin/snapshots/*.json` (brew + Brewfile, runtime, Xcode, Flutter/Android, profil) + perbandingan dua snapshot / "sekarang". Tidak mengubah sistem |
-| `audit.py` | Jejak audit JSONL `~/.service-admin/audit.log` (0600, rotasi). Setiap entri punya `by` (`panel`/`agent:<nama>`/`system:<apa>`) dari `audit.INITIATOR` (ContextVar) — thread baru harus meneruskannya (job menyimpan `by` saat start). Semua POST + akhir job; rahasia disamarkan, input terminal TIDAK dicatat. Halaman Audit: `static/audit.js` (`#audit`, `GET /api/audit`: filter aksi/hasil/tanggal) |
-| `profiles.py` | Katalog profil instalasi (Fondasi/AI/Flutter/iOS/Backend) + satu detektor per alat. Deteksi hanya baca; `plan()` menyusun rencana tanpa mengubah apa pun, `install()` menjalankannya lewat `start_steps` (satu job `profile-install` sekaligus, snapshot sebelum/sesudah). Tipe di katalog harus cocok dengan Homebrew (`flutter`, `codex` = cask) — uji dengan `brew info --json=v2` |
-| `mobile.py` | Xcode & simulator (`xcrun simctl`), Flutter/FVM, Android SDK, CocoaPods, fastlane. **Hanya baca** |
-| `mobile_ops.py` | Aksi atas toolchain mobile (`POST /api/mobile/op`): Xcode select/first-launch, simulator boot/shutdown/erase/screenshot, Flutter/FVM/pod, Android sdkmanager. `build()` murni (tidak menjalankan); eksekusi lewat `start_steps`; aksi admin lewat dialog password macOS. Browser hanya menyebut id dari registry server |
-| `projects.py` | Repo git: pemindaian folder, status/branch/worktree/log/diff, `gh` untuk PR/issue/CI, registry & preset. **Git: hanya baca** |
-| `gitops.py` | Aksi tulis Git (`POST /api/git/op`): fetch/pull(--ff-only)/push(tanpa --force), branch, stash, add/commit, worktree (hanya di `~/Worktrees`), discard/clean (wajib ketik nama project di SERVER). Id & file divalidasi terhadap keadaan repo; `build()` murni |
-| `agents.py` | Pemantauan sesi AI: memetakan proses agen ke sesi PTY (butuh `pid` dari `ptyterm.list_sessions`) + CPU/RAM per pohon proses. **Hanya pantau** |
-| `operations.py` | **Katalog operasi tunggal** (Fase 4.1): 86 operasi — level L1–L4 + eskalasi, skema parameter, syarat (`REQUIREMENTS`), idempoten, verifikasi, rollback; `plan/verify/execute`. Operasi paket Homebrew dijalankan HANYA lewat `run_package` (server.py hanya membungkus). Operasi baru → daftarkan di sini; katalog dicek dua arah terhadap `gitops`/`mobile_ops` |
-| `opschema.py` | Validator skema parameter bersama (gateway agen + operations) |
-| `plans.py` | **Rencana + persetujuan** (Fase 4.2/4.4): `propose → approve (dialog macOS) → execute (sekali, hash dicek ulang → `plan.stale`) → verify`. Agen: 6 operasi L2 (`AGENT_OPS`, termasuk `docker.container_control` — hanya engine Docker LOKAL) dan, hanya untuk agen level L3, `AGENT_OPS_L3` (`runner.spawn`, `runner.selftest`) — dialog macOS WAJIB, `auto_approve` mustahil untuk L3, maks 3/jam; persetujuan default = dialog sistem macOS (default button Reject, timeout 110 dtk = tolak, teks lewat argv). `auto_approve` hanya L2, eksplisit + audit. **Jangan tambah operasi ke `AGENT_OPS` tanpa memperbarui roadmap.** Uji dengan `ask_human` & `osascript` palsu — jangan menampilkan dialog asli di mesin kerja |
-| `agent_gateway.py` | Gerbang agen AI (Fase 4.0): registry (`agent-registry.json`, hanya hash SHA-256; rahasia di `agents/<id>.token` 0600), tool L1 baca-saja, validasi skema, rate limit 60/mnt, audit dengan identitas agen. **Tidak ada `execute_shell`.** |
-| `agent_socket.py` | Unix socket `~/.service-admin/agent.sock` (0600): hanya gerbang agen, bukan HTTP API; path ≤100 byte |
-| `mcp_server.py` | MCP stdio (JSON-RPC) — jembatan tipis ke socket; TIDAK menjalankan panel. Uji dengan driver sendiri; **belum diuji dengan klien MCP asli** |
-| `cli.py`, `service-admin` | CLI для агентов без MCP (Fase 4.3): тонкая обёртка над `mcp_server.panel_call`, без своей логики; вывод JSON, код 2 = панель недоступна |
-| `vm.py` | Драйверы ВМ (Fase 5): `Driver`/`TartDriver` — чтение + `build()` (чистая) и `run_op` для vm.clone/pull/start/stop/snapshot/delete через `start_steps`. Агентам НЕ открыто (не добавлять в `plans.AGENT_OPS` без обновления roadmap). Тест: клонируй `clean-mac` и работай только с копией; `TART_HOME` задай явно, если меняешь HOME |
-| `runners.py` | CI-раннеры (Fase 5): адаптеры провайдеров `github`/`gitea` (установка ФАЙЛОВ, sha256 из релиза), реестр источников (`runner-sources.json`: провайдер + любой URL + область) и токены в файлах 0600 (`runner-tokens/`, в API/аудит не попадают). Без регистрации/запуска — это L3 + изоляция в ВМ, следующие шаги |
-| `ci_api.py` | Клиенты API Gitea/Forgejo и GitHub по токену доступа: регистрационный токен, список/удаление раннеров, репозиторий/файл/запуск для самотеста. Редиректы ЗАПРЕЩЕНЫ (токен не уходит на другой хост), ошибки без тел ответов (нет секретов). GitHub-часть не проверена на настоящем GitHub |
-| `runner_spawn.py` | Раннер по требованию (L3): клон ВМ-основы → ephemeral-раннер на ОДНО задание → ВМ всегда удаляется. Токен — только через stdin в файл 0600 гостя, из вывода вырезается. Тест — только на копии `clean-mac` и недоступном сервере/токене-пустышке; реальную регистрацию на Gitea/GitHub ВЛАДЕЛЬЦА не запускать — тестируй на СВОЕЙ временной Gitea (скачать `dl.gitea.com`, sha256, SQLite, слушать только LAN-адрес хоста, удалить после). Агентам уровня L3 — только через план + обязательный диалог |
-| `backups.py` | Cadangan (`#backups`): `git bundle --all` per repo (dedupe via fingerprint ref, tanpa worktree), arsip `tar.gz` folder data + data panel (tanpa runtime/tmp/screenshots), simpan N terakhir, verifikasi (**`git bundle verify` TIDAK cukup — lolos bundle terpotong; pakai clone+fsck**), jadwal (thread, tiap 5 mnt), restore HANYA ke folder baru `~/Restored/…` (cek `..` di arsip). Tujuan: folder lokal/`/Volumes`, tanpa cloud |
-| `runs.py` | Test/build dari preset project + riwayat (`~/.service-admin/runs.jsonl`, `runs/*.log`) + GitHub Actions (`gh workflow run`, wajib ketik nama project). Perintah HANYA dari preset dan harus lolos `projects.runnable_argv` (allowlist `RUN_TOOLS` + `./skrip` project; tanpa `-c/-e`); timeout 30 menit, process group dibunuh. Uji gh dengan **gh palsu** (`projects.GH`), jangan pernah memanggil gh asli untuk menjalankan workflow |
-| `agent_tasks.py` | Tugas agen (`~/.service-admin/agents.json`): "tugas baru" = worktree (`gitops`, `~/Worktrees`) + agen di PTY; stop/start, kirim teks ke sesi (eksplisit), perubahan/diff relatif `base_sha`. Agen hanya dari yang terpasang, tanpa flag "skip permissions"; status busy/idle = HEURISTIK. **Uji dengan agen PALSU** — di stand uji `/opt/homebrew/bin` ada di awal PATH sehingga `claude` asli tertangkap duluan: pakai nama agen yang tidak terpasang (mis. `aider`) |
-| `static/index.html` | Shell: sidebar, header (tombol terminal + tema), dialog, panel kanan (tab Terminal / Proses) |
-| `static/app.js` | Core UI: `api()`, `btn()`, `toast`, router hash, `handlers` (event delegation), panel (`panelOpen`/`panelView`), job runner (`runJob`), tema, PHP/Node/Herd |
-| `static/terminal.js` | Tab Terminal: xterm.js per sesi, polling output, batching input, resize (FitAddon), reattach setelah refresh, `window.runInTerminal(cmd, cwd)` |
-| `static/vendor/` | xterm.js + addon fit/web-links (MIT), disimpan lokal, jangan diganti CDN |
-| `static/packages.js` | Halaman Paket & Service + detail service (`#service:<nama>`) + cloudflared |
-| `static/docker.js` | Semua halaman Docker (`#docker:<sub>`) + pembuat compose + dialog buat container |
-| `static/langs.js` | Halaman grup **Bahasa** (`#langs`, kartu 3 kolom + bahasa yang bisa di-install), halaman detail `#lang-<key>` (nav: `langs`), versi/status di sidebar (`applyNav`/`refreshNav`) |
-| `static/config.js` | Halaman File konfigurasi (`#config:<id>`) |
-| `static/dashboard.js` | Dashboard statistik + `lineChart()` (SVG, dipakai juga oleh docker.js) |
-| `macapp/launcher.applescript`, `macapp/AppIcon.icns`, `install.sh`, `fetch-python.sh` | Peluncur `Service Admin.app` (applet AppleScript, dikompilasi `/usr/bin/osacompile` tanpa CLT; nyalakan server via LaunchAgent/fallback lalu buka browser lewat `/usr/bin/open`), installer LaunchAgent `local.service-admin`, dan pengunduh Python bawaan ke `~/.service-admin/runtime/python/`. `macapp/makeicon.swift` hanya untuk membuat ulang ikon (butuh `swift`, tidak dipakai saat instalasi). Server dari launchd butuh izin macOS *Files & Folders → Documents* karena project ada di `~/Documents` |
-| `static/icons.js` | Logo Simple Icons (CC0) + `logoSvg()` / `logoFor(formula)` |
+| `server.py` | ONLY the HTTP handler + routing (`GET_ROUTES` / `POST_ROUTES` at the bottom of the file); domain logic is in modules (`brewsvc`, `herdphp`, `uihelpers`, `dockerx`, `files`, …). Do not put new logic in server.py |
+| `brewsvc.py` | Services (`brew services`) and Homebrew packages: list, search, actions (package changes are executed by `operations.run_package`). Extracted from server.py |
+| `herdphp.py` | Herd, PHP versions, Node/nvm, creating a Laravel project, `EDITORS`. Extracted from server.py; the operations catalog also calls the mutating functions |
+| `uihelpers.py` | Sidebar (`nav_info`), reading a file for diagnostics, opening Terminal/Activity Monitor, project details |
+| `ops_system.py` | Catalog of operations on the system (services, PHP/Herd/Node, languages, Docker, files) — registered in `operations.OPS`; executes the same functions as the page; NOT exposed to agents |
+| `core.py` | Shared helpers: `run`/`output`, `ApiError`, state (`~/.service-admin/state.json`), background **jobs** (`start_job`, multi-step `start_steps`, `list_jobs`), backups & the `.zshrc` block, `set_shims`/`set_env`, `shell_probe` |
+| `stats.py` | System statistics without sudo: per-core CPU (Mach `host_processor_info`), temperature (IOKit HID via ctypes), GPU/battery (`ioreg`), RAM (`vm_stat`), background sampler |
+| `runtimes.py` | Language detection (`LANGS`) + management of Python/Go/Rust/Java/Ruby |
+| `svc.py` | Service details (config file + validator per service), catalog & 100 package recommendations, cloudflared panel |
+| `files.py` | Configuration file editor: `STATIC` registry + resolver, php.ini, project `.env`; validator per type |
+| `dockerx.py` | Docker: overview, stats, disk, inspect, logs, exec console, `docker run`, compose (read/validate/save), remote contexts |
+| `ptyterm.py` | A real terminal: `zsh -l -i` sessions in a PTY (`pty.fork`), long-poll output (`/api/pty/read`, base64), input/resize/kill via POST, plus `peek` (preview without moving the offset) |
+| `setup.py` | **System Setup** (`#setup`): status of CLT/Homebrew/Git/bundled Python + installation of CLT (Apple dialog, the panel waits) and Homebrew (official installer, `SUDO_ASKPASS` → macOS password dialog). Via `start_steps`, recorded in the audit |
+| `snapshots.py` | Environment snapshots (`#snapshots`): `~/.service-admin/snapshots/*.json` (brew + Brewfile, runtimes, Xcode, Flutter/Android, profiles) + comparison of two snapshots / "now". Does not change the system |
+| `audit.py` | JSONL audit trail `~/.service-admin/audit.log` (0600, rotation). Every entry has `by` (`panel`/`agent:<name>`/`system:<what>`) from `audit.INITIATOR` (ContextVar) — new threads must pass it on (a job stores `by` at start). All POSTs + job completion; secrets are masked, terminal input is NOT logged. Audit page: `static/audit.js` (`#audit`, `GET /api/audit`: filter by action/result/date) |
+| `profiles.py` | Catalog of installation profiles (Foundation/AI/Flutter/iOS/Backend) + one detector per tool. Detection is read-only; `plan()` builds a plan without changing anything, `install()` runs it via `start_steps` (one `profile-install` job at a time, snapshot before/after). Types in the catalog must match Homebrew (`flutter`, `codex` = cask) — test with `brew info --json=v2` |
+| `mobile.py` | Xcode & simulator (`xcrun simctl`), Flutter/FVM, Android SDK, CocoaPods, fastlane. **Read-only** |
+| `mobile_ops.py` | Actions on the mobile toolchain (`POST /api/mobile/op`): Xcode select/first-launch, simulator boot/shutdown/erase/screenshot, Flutter/FVM/pod, Android sdkmanager. `build()` is pure (does not execute); execution via `start_steps`; admin actions via the macOS password dialog. The browser only names ids from the server registry |
+| `projects.py` | Git repos: folder scanning, status/branch/worktree/log/diff, `gh` for PR/issue/CI, registry & presets. **Git: read-only** |
+| `gitops.py` | Git write actions (`POST /api/git/op`): fetch/pull(--ff-only)/push(no --force), branch, stash, add/commit, worktree (only in `~/Worktrees`), discard/clean (must type the project name on the SERVER). Ids & files are validated against the repo state; `build()` is pure |
+| `agents.py` | AI session monitoring: maps agent processes to PTY sessions (needs `pid` from `ptyterm.list_sessions`) + CPU/RAM per process tree. **Monitor only** |
+| `operations.py` | **The single operations catalog** (Phase 4.1): 86 operations — levels L1–L4 + escalation, parameter schema, requirements (`REQUIREMENTS`), idempotent, verification, rollback; `plan/verify/execute`. Homebrew package operations are executed ONLY via `run_package` (server.py only wraps it). New operation → register it here; the catalog is checked in both directions against `gitops`/`mobile_ops` |
+| `opschema.py` | Shared parameter-schema validator (agent gateway + operations) |
+| `plans.py` | **Plan + approval** (Phase 4.2/4.4): `propose → approve (macOS dialog) → execute (once, hash re-checked → `plan.stale`) → verify`. Agents: 6 L2 operations (`AGENT_OPS`, including `docker.container_control` — LOCAL Docker engine only) and, only for L3-level agents, `AGENT_OPS_L3` (`runner.spawn`, `runner.selftest`) — the macOS dialog is REQUIRED, `auto_approve` is impossible for L3, max 3/hour; default approval = the macOS system dialog (default button Reject, timeout 110 s = reject, text via argv). `auto_approve` only for L2, explicit + audited. **Do not add operations to `AGENT_OPS` without updating the roadmap.** Test with a fake `ask_human` & `osascript` — do not show real dialogs on the work machine |
+| `agent_gateway.py` | AI agent gateway (Phase 4.0): registry (`agent-registry.json`, only SHA-256 hashes; secrets in `agents/<id>.token` 0600), read-only L1 tools, schema validation, rate limit 60/min, audit with agent identity. **There is no `execute_shell`.** |
+| `agent_socket.py` | Unix socket `~/.service-admin/agent.sock` (0600): only the agent gateway, not the HTTP API; path ≤100 bytes |
+| `mcp_server.py` | MCP stdio (JSON-RPC) — a thin bridge to the socket; does NOT run the panel. Test with your own driver; **not yet tested with a real MCP client** |
+| `cli.py`, `service-admin` | CLI for agents without MCP (Phase 4.3): a thin wrapper over `mcp_server.panel_call`, with no logic of its own; JSON output, exit code 2 = panel unavailable |
+| `vm.py` | VM drivers (Phase 5): `Driver`/`TartDriver` — reading + `build()` (pure) and `run_op` for vm.clone/pull/start/stop/snapshot/delete via `start_steps`. NOT exposed to agents (do not add to `plans.AGENT_OPS` without updating the roadmap). Test: clone `clean-mac` and work only with the copy; set `TART_HOME` explicitly if you change HOME |
+| `runners.py` | CI runners (Phase 5): provider adapters `github`/`gitea` (installing the FILES, sha256 from the release), source registry (`runner-sources.json`: provider + any URL + scope) and tokens in 0600 files (`runner-tokens/`, they do not reach the API/audit). No registration/launch — that is L3 + VM isolation, the next steps |
+| `ci_api.py` | Gitea/Forgejo and GitHub API clients using an access token: registration token, list/delete runners, repo/file/run for the self-test. Redirects are FORBIDDEN (the token does not go to another host), errors without response bodies (no secrets). The GitHub part has not been verified against real GitHub |
+| `runner_spawn.py` | On-demand runner (L3): clone a VM base → ephemeral runner for ONE job → the VM is always deleted. The token goes only via stdin into a 0600 file in the guest, and is stripped from the output. Test only on a copy of `clean-mac` and an unreachable server/dummy token; do not run real registration on the OWNER's Gitea/GitHub — test on your OWN temporary Gitea (download `dl.gitea.com`, sha256, SQLite, listen only on the host's LAN address, delete afterwards). For L3-level agents — only via a plan + mandatory dialog |
+| `backups.py` | Backups (`#backups`): `git bundle --all` per repo (dedupe via a fingerprint ref, no worktree), `tar.gz` archive of the data folder + panel data (without runtime/tmp/screenshots), keep the last N, verification (**`git bundle verify` is NOT enough — it passes truncated bundles; use clone+fsck**), schedule (thread, every 5 min), restore ONLY to a new folder `~/Restored/…` (check for `..` in the archive). Destination: local folder/`/Volumes`, no cloud |
+| `runs.py` | Test/build from project presets + history (`~/.service-admin/runs.jsonl`, `runs/*.log`) + GitHub Actions (`gh workflow run`, must type the project name). Commands ONLY from presets and must pass `projects.runnable_argv` (allowlist `RUN_TOOLS` + the project's `./script`; no `-c/-e`); 30-minute timeout, the process group is killed. Test gh with a **fake gh** (`projects.GH`), never call the real gh to run a workflow |
+| `agent_tasks.py` | Agent tasks (`~/.service-admin/agents.json`): "new task" = worktree (`gitops`, `~/Worktrees`) + an agent in a PTY; stop/start, send text to a session (explicit), changes/diff relative to `base_sha`. Agents only from what is installed, no "skip permissions" flag; busy/idle status = HEURISTIC. **Test with a FAKE agent** — on the test stand `/opt/homebrew/bin` is at the start of PATH so the real `claude` gets caught first: use an agent name that is not installed (e.g. `aider`) |
+| `static/index.html` | Shell: sidebar, header (terminal button + theme), dialogs, right panel (Terminal / Processes tabs) |
+| `static/app.js` | Core UI: `api()`, `btn()`, `toast`, hash router, `handlers` (event delegation), panel (`panelOpen`/`panelView`), job runner (`runJob`), theme, PHP/Node/Herd |
+| `static/terminal.js` | Terminal tab: xterm.js per session, output polling, input batching, resize (FitAddon), reattach after refresh, `window.runInTerminal(cmd, cwd)` |
+| `static/vendor/` | xterm.js + fit/web-links addons (MIT), stored locally, do not replace with a CDN |
+| `static/packages.js` | Packages & Services page + service detail (`#service:<name>`) + cloudflared |
+| `static/docker.js` | All Docker pages (`#docker:<sub>`) + compose builder + create-container dialog |
+| `static/langs.js` | **Languages** group page (`#langs`, 3-column cards + installable languages), detail page `#lang-<key>` (nav: `langs`), versions/status in the sidebar (`applyNav`/`refreshNav`) |
+| `static/config.js` | Configuration Files page (`#config:<id>`) |
+| `static/dashboard.js` | Statistics dashboard + `lineChart()` (SVG, also used by docker.js) |
+| `macapp/launcher.applescript`, `macapp/AppIcon.icns`, `install.sh`, `fetch-python.sh` | The `Service Admin.app` launcher (an AppleScript applet, compiled by `/usr/bin/osacompile` without CLT; starts the server via LaunchAgent/fallback then opens the browser via `/usr/bin/open`), the `local.service-admin` LaunchAgent installer, and the downloader of the bundled Python into `~/.service-admin/runtime/python/`. `macapp/makeicon.swift` is only for regenerating the icon (needs `swift`, not used during installation). A server started from launchd needs the macOS *Files & Folders → Documents* permission because projects are in `~/Documents` |
+| `static/icons.js` | Simple Icons logos (CC0) + `logoSvg()` / `logoFor(formula)` |
 
-## Pola kode
+## Code patterns
 
 **Backend**
-- Endpoint baru: tulis fungsi `(q)` untuk GET (dict query) atau `(body)` untuk POST (dict JSON), lalu
-  daftarkan di `GET_ROUTES`/`POST_ROUTES`. Lempar `ApiError(pesan, HTTPStatus.X)` untuk error ke UI.
-- Perintah lama (install, compose up, `laravel new`) → `start_job(label, cmd, kind)` atau
-  `start_steps(label, [(judul, cmd|callable, opsi)], kind)`, kembalikan `{"job": id}`. Satu `kind`
-  hanya boleh satu job berjalan.
-- Tool di PATH user (rustup, pipx, nvm, …) bisa tidak ada di PATH server (misalnya saat jalan dari
-  LaunchAgent). Resolve lewat `shell_probe` / `runtimes.tools()` (zsh interaktif) dan pakai path absolut.
-- Pilih versi default: shim symlink di `~/.service-admin/bin` per bahasa (`set_shims(lang, {...})`)
-  atau env di `~/.service-admin/env.zsh` (`set_env`, dipakai JAVA_HOME). Keduanya dimuat oleh satu
-  blok di **paling bawah** `~/.zshrc` (`ensure_zshrc_block`).
+- New endpoint: write a function `(q)` for GET (query dict) or `(body)` for POST (JSON dict), then
+  register it in `GET_ROUTES`/`POST_ROUTES`. Raise `ApiError(message, HTTPStatus.X)` for errors to the UI.
+- Long-running commands (install, compose up, `laravel new`) → `start_job(label, cmd, kind)` or
+  `start_steps(label, [(title, cmd|callable, options)], kind)`, return `{"job": id}`. Only one job per `kind`
+  may run at a time.
+- Tools on the user's PATH (rustup, pipx, nvm, …) may be missing from the server's PATH (for example when running from
+  a LaunchAgent). Resolve via `shell_probe` / `runtimes.tools()` (interactive zsh) and use absolute paths.
+- Choosing the default version: symlink shims in `~/.service-admin/bin` per language (`set_shims(lang, {...})`)
+  or env in `~/.service-admin/env.zsh` (`set_env`, used for JAVA_HOME). Both are loaded by a single
+  block at the **very bottom** of `~/.zshrc` (`ensure_zshrc_block`).
 
 **Frontend**
-- Halaman = `tabs.<key> = { load(silent), interval?, nav?, title?, logo?, leave? }` (`nav` = item sidebar yang disorot, `title` = judul header bila berbeda); route `#key` atau `#key:param`
-  (`this.param`). Alias lama: `#services`/`#apps` → `packages`, `#zsh` → `config`.
-- **Halaman baru WAJIB memisahkan `load()` (ambil data) dari `render()` (gambar dari data).**
-  `load()` menyimpan responsnya ke properti instance (mis. `this.data = await api(...)`) lalu memanggil
-  `this.render()`; `render()` menggambar ulang dari properti itu **tanpa satu pun request jaringan**.
-  `setLang()` memanggil `current.render()` kalau ada, dan hanya jatuh ke `load()` kalau tidak ada.
-  Kalau ini dilanggar, ganti bahasa akan menunggu request — halaman Toolchain Mobile pernah tertahan
-  belasan detik karena `xcrun simctl`, padahal datanya tidak berubah. Pola yang sama sudah dipakai
+- A page = `tabs.<key> = { load(silent), interval?, nav?, title?, logo?, leave? }` (`nav` = the sidebar item to highlight, `title` = header title if different); route `#key` or `#key:param`
+  (`this.param`). Old aliases: `#services`/`#apps` → `packages`, `#zsh` → `config`.
+- **A new page MUST separate `load()` (fetch data) from `render()` (draw from data).**
+  `load()` stores its response in an instance property (e.g. `this.data = await api(...)`) and then calls
+  `this.render()`; `render()` redraws from that property **without a single network request**.
+  `setLang()` calls `current.render()` if it exists, and falls back to `load()` only if it does not.
+  If this is violated, switching language will wait on a request — the Mobile Toolchain page was once held up
+  for over ten seconds by `xcrun simctl`, even though the data had not changed. The same pattern is already used by
   `tabs.langs` (`load()` → `refreshNav()` → `render()`).
-  Data yang diambil bertahap (ringkasan git per repo, project Flutter/FVM, blok GitHub) harus
-  **di-cache di properti instance dan digambar ulang dari cache** — jangan di-fetch ulang saat ganti bahasa.
-- Tombol: `btn(label, "aksi", {data}, "go|primary|danger")` + `handlers.aksi = async (dataset, el) => …`.
-  `data-confirm` otomatis memunculkan konfirmasi.
-- Proses panjang: `runJob(api("/api/…", body), onDone)`. Progres tampil di panel kanan, tab **Proses**
-  (ikon terminal di header, titik merah saat berjalan). Tab **Terminal** adalah shell PTY sungguhan;
-  program interaktif (claude, vim, tinker) harus lewat sini, bukan lewat job (job tidak punya TTY).
-- Warna selalu lewat token CSS (`--bg`, `--card`, `--text`, `--series-1..4`, …). Tema: terang/gelap/
-  sistem via `html[data-theme]`; token gelap didefinisikan di dua tempat (media query + `[data-theme="dark"]`).
-- Selalu `esc()` untuk data dinamis di template string.
+  Data fetched incrementally (git summary per repo, Flutter/FVM projects, the GitHub block) must be
+  **cached in an instance property and redrawn from the cache** — do not re-fetch when switching language.
+- Buttons: `btn(label, "action", {data}, "go|primary|danger")` + `handlers.action = async (dataset, el) => …`.
+  `data-confirm` automatically shows a confirmation.
+- Long processes: `runJob(api("/api/…", body), onDone)`. Progress is shown in the right panel, **Processes** tab
+  (terminal icon in the header, red dot while running). The **Terminal** tab is a real PTY shell;
+  interactive programs (claude, vim, tinker) must go through it, not through a job (jobs have no TTY).
+- Colors always via CSS tokens (`--bg`, `--card`, `--text`, `--series-1..4`, …). Theme: light/dark/
+  system via `html[data-theme]`; dark tokens are defined in two places (media query + `[data-theme="dark"]`).
+- Always `esc()` dynamic data in template strings.
 
-## Verifikasi
+## Verification
 
-- Lint Python: `pipx run pyflakes *.py`. Cek syntax JS: `node --check static/*.js`.
-- Tes backend: import modul langsung (`python3 -c "import dockerx; print(dockerx.overview({}))"`).
-  Untuk fungsi yang menulis `~/.zshrc`/shim/state, **patch konstanta ke HOME sementara**
-  (`core.HOME`, `core.DATA_DIR`, `core.SHIM_DIR`, …) supaya file asli user tidak berubah.
-- Tes PTY: `import ptyterm`, `new_session` → `write(..."perintah\r")` → `read` (base64) → `kill`. Kalau
-  menjalankan `claude` untuk tes, keluar dengan `\x03` lalu `kill` sesi.
-- Tes UI: tidak ada Chrome; pakai Firefox headless
+- Python lint: `pipx run pyflakes *.py`. JS syntax check: `node --check static/*.js`.
+- Backend tests: import the module directly (`python3 -c "import dockerx; print(dockerx.overview({}))"`).
+  For functions that write `~/.zshrc`/shims/state, **patch the constants to a temporary HOME**
+  (`core.HOME`, `core.DATA_DIR`, `core.SHIM_DIR`, …) so the user's real files are not changed.
+- PTY tests: `import ptyterm`, `new_session` → `write(..."command\r")` → `read` (base64) → `kill`. If
+  you run `claude` for a test, exit with `\x03` and then `kill` the session.
+- UI tests: there is no Chrome; use headless Firefox
   `/Applications/Firefox.app/Contents/MacOS/firefox --headless --profile <dir> --no-remote --window-size=1300,1100 --screenshot out.png file://…`.
-  Screenshot diambil saat event `load`, jadi buat halaman harness yang me-*stub* `window.fetch` dengan
-  JSON hasil API asli dan jalankan aksi uji langsung di chain `initRuntimes().then(route).then(...)`
-  (bukan `setTimeout`). Matikan transisi CSS kalau perlu (`#job{transition:none}`). Untuk konten yang
-  dirender async (xterm.js), tahan event `load` dengan `<img>` dari server kecil yang sengaja lambat.
-- Setelah mengubah `.py`, restart server (`kill $(lsof -ti tcp:8765)`, lalu jalankan lagi). File statis
-  dikirim dengan `Cache-Control: no-cache`, jadi cukup refresh browser.
+  The screenshot is taken on the `load` event, so build a harness page that *stubs* `window.fetch` with
+  JSON from the real API results and run the test actions directly in the chain `initRuntimes().then(route).then(...)`
+  (not `setTimeout`). Disable CSS transitions if needed (`#job{transition:none}`). For content
+  rendered asynchronously (xterm.js), hold the `load` event with an `<img>` from a small server that is deliberately slow.
+- After changing a `.py`, restart the server (`kill $(lsof -ti tcp:8765)`, then run it again). Static files
+  are served with `Cache-Control: no-cache`, so refreshing the browser is enough.
 
-## Hal yang perlu diingat
+## Things to remember
 
-- Shell user **zsh**: `$VAR` tidak di-word-split (pakai array `(${=VAR})`), dan `timeout` tidak ada.
-- Jangan menjalankan aksi yang mengubah sistem user saat tes (brew install/uninstall, `herd use`,
-  `nvm alias`, simpan `/etc/hosts`, dialog Finder/admin) tanpa diminta. Kalau perlu container/project
-  uji, buat di scratchpad lalu bersihkan (`docker rm -f`, `compose down -v`, `rmi` image yang baru di-pull).
-- Data persisten aplikasi: `~/.service-admin/` (`state.json`, `bin/`, `env.zsh`, `backups/`, `logs/`,
+- The user's shell is **zsh**: `$VAR` is not word-split (use an array `(${=VAR})`), and `timeout` does not exist.
+- Do not run actions that change the user's system during tests (brew install/uninstall, `herd use`,
+  `nvm alias`, saving `/etc/hosts`, Finder/admin dialogs) unless asked. If you need a test container/project,
+  create it in the scratchpad and then clean up (`docker rm -f`, `compose down -v`, `rmi` the newly pulled images).
+- The app's persistent data: `~/.service-admin/` (`state.json`, `bin/`, `env.zsh`, `backups/`, `logs/`,
   `php-shims/`).
-- Herd gratis tidak punya `services:*` (butuh Herd Pro). CLI Herd ada di
+- Free Herd has no `services:*` (needs Herd Pro). The Herd CLI is at
   `~/Library/Application Support/Herd/bin` (`herd`, `php84`, `composer`, `laravel`).
