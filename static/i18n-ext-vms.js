@@ -1,6 +1,6 @@
 // Виртуальные машины: интерфейс и ошибки (err.vm.*). Те же ключи в ru и en.
 Object.assign(I18N.ru, {
-  "nav.vms": "Виртуальные машины",
+  "nav.vms": "Машины и раннеры",
   "vm.intro.qemu": "Виртуальные машины на QEMU (без root): основа из облачного образа Ubuntu, клон — быстрый слой поверх основы, «снимок» — полная копия остановленной ВМ. Запуск без графики; гость доступен по SSH только с этого компьютера. Агентам ИИ эти действия недоступны.",
   "setup.python.packaged": "Системный Python {v} из пакета .deb — так и задумано.",
   "vm.intro": "Виртуальные машины на tart: запуск, остановка, копия, «снимок» (в tart это клон остановленной ВМ) и удаление. Запуск идёт без графики и без общих папок хоста. Агентам ИИ эти действия недоступны.",
@@ -116,7 +116,7 @@ Object.assign(I18N.ru, {
   "err.vm.unknown_op": "Неизвестное действие с ВМ",
 });
 Object.assign(I18N.en, {
-  "nav.vms": "Virtual machines",
+  "nav.vms": "Machines & runners",
   "vm.intro.qemu": "Virtual machines on QEMU (no root): the base comes from an Ubuntu cloud image, a clone is a fast layer over the base, a \"snapshot\" is a full copy of a stopped VM. VMs start headless; the guest is reachable over SSH only from this computer. AI agents cannot do any of this.",
   "setup.python.packaged": "The system Python {v} from the .deb package — this is intended.",
   "vm.intro": "Virtual machines on tart: start, stop, copy, \"snapshot\" (in tart this is a clone of a stopped VM) and delete. VMs start headless, with no host folders shared. AI agents cannot do any of this.",

@@ -1,6 +1,6 @@
-# Agent connections: sections and wizards
+# AI access: sections and wizards
 
-The **Agent connections** page is split into parts and the typical tasks are wizards (the “Start” button on the Overview).
+The **AI access** page is split into parts and the typical tasks are wizards (the “Start” button on the Overview).
 
 ## Sections
 - **Overview** — the state (agents, approvals, Telegram, API, operators), three wizards and an explanation of **where you approve actions**.

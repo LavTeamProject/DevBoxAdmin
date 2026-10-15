@@ -134,7 +134,7 @@ Homebrew 7.0.9 took about 3.5 minutes to install.
 |---|---|
 | **Dashboard** | CPU/RAM load, temperature, disk, battery |
 | **Profiles** ("Профили установки") | toolsets (Foundation, AI, Flutter, iOS, Backend): the panel shows what is already there and installs what is missing |
-| **Agent connections** ("Подключение агентов") | AI agents (Claude Code, Codex…) over MCP: registration, levels L1–L3, approval queue |
+| **AI access** ("AI-доступ") | AI agents (Claude Code, Codex…) over MCP: registration, levels L1–L3, approval queue |
 | **Virtual machines** ("Виртуальные машины") | tart, disposable VMs, and CI runners (**tart is optional** — without it the page simply says "tart not found") |
 | **Backups** ("Резервные копии") | git repositories and data to a local folder or an external drive |
 | **Audit** ("Аудит") | a log of everything the panel did (without passwords and tokens) |
@@ -143,7 +143,7 @@ Homebrew 7.0.9 took about 3.5 minutes to install.
 
 ![Profiles](../img/08-page-profiles.jpg)
 
-![Agent connections](../img/09-page-connect.jpg)
+![AI access](../img/09-page-connect.jpg)
 
 ![Virtual machines: tart is not found on a clean Mac — this is normal](../img/10-page-vms.jpg)
 

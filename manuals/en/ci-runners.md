@@ -136,7 +136,7 @@ One launch = one job = one VM. For continuous work, press the button (or have th
 
 ## 6. Working through an AI agent
 
-The agent (Claude Code, Codex, …) connects to the panel over MCP (the "Agent connection" («Подключение агентов») page). For CI operations the agent needs **level L3** — you
+The agent (Claude Code, Codex, …) connects to the panel over MCP (the "Agent connection" («AI-доступ») page). For CI operations the agent needs **level L3** — you
 grant it in the agents table (the panel asks again). What the agent can do at level L3:
 
 * read: `list_ci_sources` (sources **without tokens**), `list_vms`, `inspect_system`, …;

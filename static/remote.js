@@ -2,9 +2,7 @@
 // Всё, что ослабляет защиту, подтверждается системным окном на машине с панелью — это делает сервер; мастера лишь ведут по шагам.
 
 async function loadRemoteExtra(tab) {
-  tab.rapi = await api("/api/remote").catch(() => null);
-  tab.opsList = await api("/api/operators").catch(() => null);
-  tab.tg = await api("/api/telegram").catch(() => null);
+  [tab.rapi, tab.opsList, tab.tg] = await Promise.all([api("/api/remote").catch(() => null), api("/api/operators").catch(() => null), api("/api/telegram").catch(() => null)]);
 }
 
 const need = (cond, key) => { if (!cond) throw new Error(t(key)); };

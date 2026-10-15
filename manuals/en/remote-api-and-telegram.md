@@ -1,6 +1,6 @@
 # Remote API, operators and the Telegram bot
 
-Page **Agent connections → Remote connection**. Everything is off by default. Any switching on or widening of access is confirmed by a **system window on the machine with the panel** (on a Linux machine without a screen — `service-admin approve`, see `connect-ai-agent-linux.md`).
+Page **AI access → Remote connection**. Everything is off by default. Any switching on or widening of access is confirmed by a **system window on the machine with the panel** (on a Linux machine without a screen — `service-admin approve`, see `connect-ai-agent-linux.md`).
 
 ## 1. API for your own app
 1. The **API for your own app** block: address (127.0.0.1 — for a reverse proxy/SSH tunnel; a LAN/VPN address; outside localhost **TLS** and an **allow-list of addresses** are mandatory), port (8766 by default), “Enable” → **Save** → confirm in the system window.

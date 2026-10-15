@@ -2,6 +2,13 @@
 
 Status: **a plan, waits for the owner's decision.** The menu and pages are not changed until it is approved. Already done (U1): the "who can approve plans" switch moved to "Approvals", and the "on this computer" agent connection wizard explains the steps. The plan went through an independent check (a critic verified the facts against the code); the corrections are included below.
 
+## 0. The owner's decisions (2026-10-15)
+1. The menu map (5 groups) is accepted ("seems fine"); the owner asked to check against similar products (section 11).
+2. **Node — through Homebrew only** (a single manager). Consequence: Homebrew gives only **versioned formulae** (`node@20`, `node@22`, …) and drops unsupported ones; exact old versions need another mechanism — see "Old versions" below and question 1.
+3. Future roles (Data/ML, Game, DevOps, Embedded, etc.) are **added to "Getting started" marked "in development"** with a "I want this" button — to understand demand and priority (mechanism — section 12).
+4. **Old versions:** the owner expects to install not only the latest but also **old versions** of tools (Python, Node, PHP, Flutter, Go…). This is part of stage U3: each language gets a list of available versions (including old), "install", "make main", "remove".
+5. We start with U2 ("probably").
+
 ## 1. What is wrong now (verified against the code)
 
 The menu has 17 items in four groups named after "technology", not after tasks:
@@ -89,7 +96,7 @@ Each ends with: a run on a real system → before/after screenshots → independ
 |---|---|---|
 | **U0** | Glossary, the "where is what" map (this document), measuring the 10 scenarios "before" | 1 day |
 | **U1** ✅ | The "who can approve" switch in "Approvals"; the "on this computer" agent wizard | done |
-| **U2** | Skeleton: the new menu and groups, the page template (header, chips, tabs, independent block loading, empty states, error blocks), redirects preserving parameters, moving `docker.js`/`connect.js` to one sub-tab mechanism, speeding up `connect.load` | 5–6 days |
+| **U2** 🔶 | **Done:** the new menu in 5 groups, the composite pages "Getting started" and "History & copies" (a shared `makeComposite` mechanism), redirects of old addresses preserving parameters, independent and parallel loading on "AI access", shared error/empty/parallel-load blocks (`shell.js`), the smoke harness `tests/ui_smoke.py` (29 addresses, on the real HOME: 29/29). **Remaining:** one look of the header/status chips, moving `docker.js` to the shared sub-tab mechanism, applying the error/empty blocks on the other pages. The stage's original content: skeleton: the new menu and groups, the page template (header, chips, tabs, independent block loading, empty states, error blocks), redirects preserving parameters, moving `docker.js`/`connect.js` to one sub-tab mechanism, speeding up `connect.load` | 5–6 days |
 | **U3** | "Environment": "Languages & versions" in one layout (versions · default · packages · install/uninstall; Flutter/Dart once), "Packages & services" (tabs: installed · unneeded · updates · services · recommended), "Mobile development" (+ "install"), "Containers" | 6–8 days |
 | **U4a** | Extending the profile catalog (Web, Backend with PHP/Node, language choice, no duplicates, one Node manager, "is it running", item states) | 3–4 days |
 | **U4** | "Getting started": system preparation + stacks by role on the new catalog | 4–5 days |
@@ -99,6 +106,8 @@ Each ends with: a run on a real system → before/after screenshots → independ
 | **U8** | "AI access" as one whole section (one approval policy, guides per client), in the "AI agents" group | 2 days |
 | **U9** | Polish: responsiveness, accessibility, manuals and screenshots, checking the 10 scenarios with the owner | 3–4 days |
 Total ≈ 5–6 weeks. The first visible benefit — U2 + U4a/U4.
+
+**Old versions (part of U3).** Sources of the lists: Python — `uv python list --all-versions` (any patch version), Node — Homebrew versioned formulae (`node@N`), PHP — versioned formulae (`php@8.x`) and Herd, Flutter — FVM (`fvm releases`), Go/Rust/Java/Ruby — version managers or Homebrew versioned formulae. If the exact old version is not in Homebrew (it is unsupported), the panel honestly shows "not in Homebrew" and offers an additional mechanism (question 1).
 
 ## 8. Ten check scenarios (goal — each ≤ 3 clicks from "Overview" without hints)
 1. Install Python 3.12 and make it the main one (python3 without a full path).
@@ -119,9 +128,18 @@ Total ≈ 5–6 weeks. The first visible benefit — U2 + U4a/U4.
 - **Version-manager conflict (Node)** → the owner's decision before U4a.
 - **Regressions** → comparing 76+ GET routes with the base plus page screenshots.
 
-## 10. Questions for the owner
-1. Is the menu map (5 groups) right? Especially: "Sites & domains" as a separate item (Herd + cloudflared + hosts), with only PHP versions left in "Languages". Is that how you think of it?
-2. Which Node manager stays as the single one: **nvm** (as on the Node page now) or **Homebrew** (as in profiles)?
-3. Which roles are needed in "Getting started": Backend (PHP/Laravel, Node, Python, Go), Flutter/mobile, Web, AI operator — enough? Are more needed (Data/ML etc.)?
-4. Do you need real "history and rollback" (reinstalling packages from a snapshot), or is "compare and save" enough?
-5. Where to start: U2 (the menu skeleton and the template) — recommended.
+## 11. What a survey of similar products showed
+- **FlyEnv** (BSD-2, macOS/Windows/Linux) is the closest analogue: runtime versions, web servers and databases, local domains and HTTPS, project services, in one interface without Docker. **Laravel Herd** is the reference for PHP/Laravel (sites, PHP settings, nginx, dnsmasq, Node), closed source. **DevPod** — environments in containers; **Flox/Devbox/mise** — per-project versions and packages, with no panel. Our difference: **an AI-agent gateway with approvals**, remote operators (Telegram/API), Linux, VMs and CI runners — none of them has these; while "versions + services + domains in one place" is worth borrowing from FlyEnv/Herd.
+- **ISPmanager, Cockpit, Coolify** (patterns): after login — an **overview**, then a permanent left menu (it neither hides nor appears — a "jumpy" panel annoys); ISPmanager's menu has levels "all / main / favorites / popular" and a search; Cockpit separated overviews from per-host settings; Coolify builds a hierarchy "server → project → environment → resource" and tabs on an object. Conclusion for us: overview + a stable menu + tabs on an object page; **favorites and popular** is a possible replacement for the postponed search and "interface profile".
+- **Versions:** `uv python list --all-versions` / `uv python install 3.12.3`, `nvm ls-remote`, `fvm releases` / `fvm install`, `mise ls-remote node` / `mise install node@20` — version managers have lists of "all" versions; Homebrew has only versioned formulae.
+
+## 12. "In development" and "I want this" (demand for future roles and features)
+Cards of future roles/features in "Getting started" are marked **"in development"** and have an **"I want this"** button. Options (the owner chooses; nothing is sent automatically):
+- **A. (recommended)** the button opens a ready issue/discussion in the public repository in the browser with the role's name; the person sends it themselves. Demand is seen by the number of 👍 — zero telemetry, no data leaves automatically.
+- **B.** a local "want" counter in the panel (for the owner), no sending.
+- **C.** sending an anonymous vote to your server/form — needs a separate decision (the address, exactly what is sent, user consent); not done by default.
+
+## 10. Open questions
+1. **"Old versions" (Node etc.):** Homebrew gives only `node@N` of supported versions. For exact old versions (for example Node 14, Python 3.8.10, PHP 7.4, Flutter 2.x) I suggest adding **one extra mechanism — `mise`** (one version manager for Node/Python/Go/Ruby/Java and more) as an optional choice, keeping Homebrew as the main one. Agreed? (Python is already installed through `uv`, Flutter through FVM.)
+2. "I want this": option A (a button opens a GitHub issue), B (a local counter) or C (sending to a server)? Recommendation — A + B.
+3. Which future roles to show "in development" (I suggest: Data/ML, DevOps/Kubernetes, Game, Embedded/IoT, Desktop apps)?

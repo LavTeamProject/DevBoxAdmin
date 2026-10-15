@@ -1,5 +1,7 @@
 # Manuals
 
+> **The menu changed (Phase 10, stage U2).** "System setup" and "Install profiles" are now tabs of **"Getting started"**, "Snapshots" and "Backups" are tabs of **"History & copies"**, "Agent connections" is called **"AI access"**, "Herd" is **"Sites (Herd)"**, "Audit" is **"Activity log"**. Old addresses (`#setup`, `#snapshots`, etc.) work. Screenshots in some manuals show the previous menu; they are refreshed in stage U9.
+
 Step-by-step instructions for people. All of them were checked on a real system; anything that could not be verified is marked in the text and in `../../docs/en/unverified.md`.
 
 | Manual | What it covers |
@@ -11,7 +13,7 @@ Step-by-step instructions for people. All of them were checked on a real system;
 | [connect-ai-agent-linux.md](connect-ai-agent-linux.md) | An AI agent on Linux: how a human approves actions (a window or `service-admin approve`), when the channel is disabled |
 | [connect-ai-agent-remote.md](connect-ai-agent-remote.md) | A remote agent over SSH: a restricted key starts only one agent's MCP bridge |
 | [python-and-homebrew.md](python-and-homebrew.md) | Python (versions, default without a full path, pip packages) and Homebrew packages (unneeded, size) |
-| [connect-agents-wizards.md](connect-agents-wizards.md) | The “Agent connections” page: sections, wizards and where you approve actions |
+| [connect-agents-wizards.md](connect-agents-wizards.md) | The “AI access” page: sections, wizards and where you approve actions |
 | [remote-api-and-telegram.md](remote-api-and-telegram.md) | The remote API for your own app, operators (TOTP) and the Telegram bot |
 | [ci-runners-linux.md](ci-runners-linux.md) | CI runners on Linux: QEMU without root, a base from an Ubuntu image, network isolation, KVM |
 

@@ -2,7 +2,7 @@
 
 The agent (Claude Code, Codex, etc.) runs on **another computer**, the panel runs on a server. The panel is not opened to the network.
 
-1. On the server open **Agent connections** → register the agent → the **Remote connection → SSH** block. If the SSH server is off, the panel says how to turn it on (on a Mac: "Remote Login").
+1. On the server open **AI access** → register the agent → the **Remote connection → SSH** block. If the SSH server is off, the panel says how to turn it on (on a Mac: "Remote Login").
 2. Pick the agent. On the agent's computer run the shown `ssh-keygen` command — a separate key just for this agent.
 3. Paste the contents of the `.pub` file into the field and press **Build the line**. Add the resulting line as ONE line to `~/.ssh/authorized_keys` on the server. The panel does not edit that file itself.
 4. On the agent's computer run the shown `claude mcp add …` command (or paste the JSON into the client's settings).

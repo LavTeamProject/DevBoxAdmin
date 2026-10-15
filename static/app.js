@@ -253,6 +253,11 @@ async function route() {
   }
   if (leavingEditor) tabs.config.dirty = false;
   // hash: "#key" atau "#key:param" (mis. #service:mysql@9.7); alias lama tetap jalan
+  const first = location.hash.slice(1).split(":")[0];
+  if (typeof HASH_ALIASES !== "undefined" && HASH_ALIASES[first]) {   // старые адреса (#setup, #snapshots…) → новые (#start:setup, #history:snapshots…), параметры сохраняются
+    history.replaceState(null, "", "#" + HASH_ALIASES[first] + location.hash.slice(1 + first.length));
+    lastHash = location.hash;
+  }
   const [rawKey, ...rest] = location.hash.slice(1).split(":");
   const key = ({ services: "packages", apps: "packages", zsh: "config" })[rawKey] || rawKey;
   const tab = tabs[key] || tabs.dashboard;

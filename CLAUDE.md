@@ -259,6 +259,9 @@ const k=Object.keys(I.ru);for(const [l,d] of Object.entries(I))console.log(l,k.f
 
 ## Verification
 
+- UI smoke (manual, needs Chrome): `python3 tests/ui_smoke.py` opens every page (and old aliases) read-only in headless Chrome and checks: it rendered, the right menu item is highlighted, composite pages have their tab bar, no JS errors. Uses your real HOME by default (a temp HOME makes Homebrew rebuild its indexes and pages "hang"); `--temp-home` to avoid that.
+- Navigation: menu groups are in `static/index.html`; composite pages and old-hash redirects (`HASH_ALIASES`) are in `static/shell.js`; add a new composite there, not by copying the sub-tab code.
+
 - Python lint: `pipx run pyflakes *.py`. JS syntax check: `node --check static/*.js`.
 - Backend tests: import the module directly (`python3 -c "import dockerx; print(dockerx.overview({}))"`).
   For functions that write `~/.zshrc`/shims/state, **patch the constants to a temporary HOME**

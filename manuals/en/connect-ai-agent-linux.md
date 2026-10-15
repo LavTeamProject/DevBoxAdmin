@@ -6,7 +6,7 @@ while on Linux there may be no dialog (a headless server). Tested on Ubuntu 24.0
 > **The main rule:** the agent runs as the same user and can write to your terminal, so approval is protected by a **code that only you can see**.
 > An agent that has the administrator password or passwordless `sudo` can always approve on your behalf; in that case the channel is disabled (see below).
 
-![Agent connections](../img/lx-connect.jpg)
+![AI access](../img/lx-connect.jpg)
 
 ## Approval channels
 
@@ -32,7 +32,7 @@ It installs `/usr/local/libexec/service-admin-approve`, a polkit action (passwor
 
 ## How to approve a plan
 
-1. The agent proposes a change (`plan_changes`), and a request appears in the panel ("Agent connections → Approval requests").
+1. The agent proposes a change (`plan_changes`), and a request appears in the panel ("AI access → Approval requests").
 2. In **your own** terminal: `service-admin approve` (if there are several requests, specify the id). Fallback if the polkit agent is unavailable: `service-admin approve --sudo`.
 3. Enter the administrator password, read the text — it is the same text as in the panel — and type the **four-character code** shown on the screen. Any other input = refusal.
 4. The panel accepts the decision only if the decision file was **created by root**, is not writable by others, and matches the request by number, one-time code and expiry time.

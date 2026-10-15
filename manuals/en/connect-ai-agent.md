@@ -21,7 +21,7 @@ no answer within 110 seconds means refusal). The agent cannot click this dialog.
 
 ## Step 1. Register the agent
 
-1. Open the panel → **"Agent connection"** («Подключение агентов») (`#connect`).
+1. Open the panel → **"Agent connection"** («AI-доступ») (`#connect`).
 2. Enter a name (for example `claude`), choose a level (start with **L1**), optionally an expiry → **"Register"** («Зарегистрировать»).
 3. The panel will show a **ready-made command** and a JSON configuration. The agent's secret is **not shown**: it is stored in the file `~/.service-admin/agents/<id>.token` (permissions 0600),
    and the registry keeps only its SHA-256 hash.

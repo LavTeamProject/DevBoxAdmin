@@ -7,7 +7,7 @@ const setupState = { data: null };
 async function refreshSetupBanner() {
   try { setupState.data = await api("/api/setup"); } catch { return; }
   renderSetupBanner();
-  if (current === tabs.setup) tabs.setup.render();
+  if (current === tabs.setup || (current === tabs.start && tabs.start.sub === "setup")) tabs.setup.render();
 }
 
 function renderSetupBanner() {

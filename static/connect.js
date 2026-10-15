@@ -15,12 +15,10 @@ tabs.connect = {
   get sub() { return CONNECT_SECTIONS.includes(this.param) ? this.param : "overview"; },
 
   async load(silent) {
-    try {
-      this.data = await api("/api/agent-gateway");
-      this.ops = await api("/api/operations").catch(() => null);
-      this.plans = await api("/api/plans").catch(() => null);
-      await this.loadRemote();
-      await loadRemoteExtra(this);
+    try {   // запросы независимы и идут параллельно (раньше — пять подряд каждые 5 с)
+      const [data, ops, plans] = await Promise.all([api("/api/agent-gateway"), api("/api/operations").catch(() => null), api("/api/plans").catch(() => null),
+                                                    this.loadRemote(), loadRemoteExtra(this)]);
+      this.data = data; this.ops = ops; this.plans = plans;
     } catch (e) { if (!silent) return failView(e); return; }
     // фоновое обновление не должно стирать то, что человек сейчас вводит в поля
     if (silent && view.contains(document.activeElement) && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) return;

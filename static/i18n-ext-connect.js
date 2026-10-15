@@ -1,6 +1,6 @@
 // Подключение агентов: интерфейс и ошибки (err.gw.*). Те же ключи в ru и en.
 Object.assign(I18N.ru, {
-  "nav.connect": "Подключение агентов",
+  "nav.connect": "AI-доступ",
   "gw.intro": "Подключите ИИ-агента (Claude Code, Codex, OpenCode, Gemini или свой) по MCP: панель отдаёт ему небольшой набор операций, а не доступ к машине. Чтение (уровень L1) доступно сразу; предлагать изменения агент может только с уровнем L2, и каждое изменение выполняется после вашего подтверждения. Связь идёт через Unix-сокет, сетевого порта нет.",
   "gw.honest": "Важно: агент, запущенный на этом же компьютере, обычно имеет собственный терминал и может сделать то же самое в обход панели. Подтверждение в системном диалоге защищает операции, которые он выполняет ЧЕРЕЗ панель (и оставляет журнал), но не ограничивает его собственный терминал. Для недоверенного кода нужна изоляция (виртуальная машина).",
   "gw.count": "активных агентов: {n}",
@@ -74,7 +74,7 @@ Object.assign(I18N.ru, {
   "err.gw.remote_path": "Путь установки содержит символы, недопустимые для authorized_keys",
 });
 Object.assign(I18N.en, {
-  "nav.connect": "Agent connections",
+  "nav.connect": "AI access",
   "gw.intro": "Connect an AI agent (Claude Code, Codex, OpenCode, Gemini or your own) over MCP: the panel gives it a small set of operations, not access to the machine. Reading (level L1) is available at once; an agent can propose changes only with level L2, and every change runs after you approve it. It talks over a Unix socket; there is no network port.",
   "gw.honest": "Note: an agent running on this same computer usually has its own terminal and can do the same things around the panel. The system-dialog approval protects the operations it runs THROUGH the panel (and leaves an audit trail), but it does not restrict the agent's own terminal. Untrusted code needs isolation (a virtual machine).",
   "gw.count": "active agents: {n}",
