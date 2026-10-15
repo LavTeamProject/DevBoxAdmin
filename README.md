@@ -48,14 +48,15 @@ cd ~/service-admin
 
 The installer downloads a checksum-verified Python 3.12, builds `Service Admin.app` (no Command Line Tools needed),
 registers a LaunchAgent and starts the panel at **http://127.0.0.1:8765**.
-Step-by-step guide with screenshots (verified on a clean macOS VM): [`manuals/install-clean-mac.md`](manuals/install-clean-mac.md).
+Step-by-step guide with screenshots (verified on a clean macOS VM): [`manuals/en/install-clean-mac.md`](manuals/en/install-clean-mac.md).
 Run without installing: `python3 server.py` (Python 3.11+).
 
 ## Guides
 
-* [`manuals/install-clean-mac.md`](manuals/install-clean-mac.md) — install on a clean Mac (Russian)
-* [`manuals/connect-ai-agent.md`](manuals/connect-ai-agent.md) — connect an AI agent over MCP (Russian)
-* [`manuals/ci-runners.md`](manuals/ci-runners.md) — disposable CI runners in VMs (Russian)
+* [`manuals/en/install-clean-mac.md`](manuals/en/install-clean-mac.md) — install on a clean Mac
+* [`manuals/en/connect-ai-agent.md`](manuals/en/connect-ai-agent.md) — connect an AI agent over MCP
+* [`manuals/en/ci-runners.md`](manuals/en/ci-runners.md) — disposable CI runners in VMs
+* Russian versions of the guides: [`manuals/`](manuals/README.md)
 * [`docs/roadmap.md`](docs/en/roadmap.md) — what is done, what is verified, what is not (Russian: [`docs/roadmap.md`](docs/roadmap.md))
 * [`docs/unverified.md`](docs/en/unverified.md) — honest list of things that were *not* verified on real systems
 
