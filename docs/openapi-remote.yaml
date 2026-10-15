@@ -1,0 +1,66 @@
+openapi: 3.0.3
+info:
+  title: Service Admin remote API
+  version: 1.0.0
+  description: |
+    Off by default. Enable in the panel (Agent connections → Remote connection). Two roles with separate tokens:
+    agents (`/agent/v1`) and operators (`/operator/v1`). Responses are `{ok: true, result}` or `{ok: false, error: {code, message}}`.
+    Outside localhost the panel requires TLS and an allow-list of client addresses; pin the certificate SHA-256 fingerprint shown in the panel.
+servers:
+  - url: https://HOST:8766
+components:
+  securitySchemes:
+    bearer: { type: http, scheme: bearer, description: "Agent token (agents) or operator token `sao_…` (operators)." }
+  schemas:
+    Error:
+      type: object
+      properties:
+        ok: { type: boolean, enum: [false] }
+        error: { type: object, properties: { code: { type: string }, message: { type: string } } }
+security: [ { bearer: [] } ]
+paths:
+  /agent/v1/tools:
+    get:
+      summary: Tools available to this agent (depends on its level L1–L3)
+      responses: { "200": { description: "{ok, result:{tools:[{name,description,inputSchema}]}}" }, "401": { description: unknown/revoked/expired agent token }, "429": { description: rate limited or address blocked } }
+  /agent/v1/call:
+    post:
+      summary: Call a gateway tool (same tools and rules as over the local socket)
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [tool], properties: { tool: { type: string }, params: { type: object } } } } }
+      responses:
+        "200": { description: "{ok:true,result} or {ok:false,error} for a tool failure (e.g. plan not approved)" }
+        "400": { description: invalid params }
+        "403": { description: tool needs a higher level }
+        "404": { description: unknown tool }
+  /operator/v1/status:
+    get:
+      summary: Pending plans, agents, whether remote approval is on
+      responses: { "200": { description: ok }, "401": { description: bad operator token } }
+  /operator/v1/plans:
+    get:
+      summary: Recent plans of all agents (status, level, digest)
+      responses: { "200": { description: ok } }
+  /operator/v1/audit:
+    get:
+      summary: Audit log (read right)
+      parameters: [ { name: limit, in: query, schema: { type: integer, maximum: 200 } }, { name: action, in: query, schema: { type: string } } ]
+      responses: { "200": { description: ok } }
+  /operator/v1/plans/approve:
+    post:
+      summary: Approve an L2 plan (needs the approve right, remote approval switched on, a single-use TOTP code, and the plan digest you saw)
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [id, digest, totp], properties: { id: { type: string }, digest: { type: string, minLength: 12 }, totp: { type: string, pattern: "^[0-9]{6}$" } } } } }
+      responses:
+        "200": { description: plan approved (recorded as operator:<name>) }
+        "403": { description: "no approve right / remote_approval_off / totp_invalid / plan.remote_level (L3 can only be approved by the system dialog)" }
+        "409": { description: "plan.not_pending / plan.digest_mismatch" }
+  /operator/v1/plans/reject:
+    post:
+      summary: Reject a pending plan (approve right)
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [id], properties: { id: { type: string } } } } }
+      responses: { "200": { description: rejected } }

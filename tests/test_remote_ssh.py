@@ -18,7 +18,8 @@ class RemoteSsh(unittest.TestCase):
     def test_line_has_forced_command_and_restrict(self):
         line = gw.authorized_line("a1b2c3d", KEY + " me@laptop")
         self.assertTrue(line.startswith('command="'))
-        self.assertIn("mcp_server.py --agent a1b2c3d\",restrict ssh-ed25519 ", line)
+        self.assertIn("mcp_server.py", line)
+        self.assertIn(" --agent a1b2c3d\",restrict ssh-ed25519 ", line)
         self.assertNotIn("\n", line)
         self.assertNotIn("port-forwarding", line)       # пробросы запрещены: restrict без исключений
 
@@ -36,6 +37,12 @@ class RemoteSsh(unittest.TestCase):
 
     def test_rejects_quote_in_install_path(self):
         with mock.patch("setup.runtime_info", return_value={"python": '/opt/py"x/bin/python3'}):
+            with self.assertRaises(core.ApiError) as c:
+                gw.authorized_line("a1b2c3d", KEY)
+        self.assertEqual(c.exception.code, "gw.remote_path")
+
+    def test_single_quote_in_install_path_is_refused_not_emitted_broken(self):
+        with mock.patch("setup.runtime_info", return_value={"python": "/opt/it's/bin/python3"}):
             with self.assertRaises(core.ApiError) as c:
                 gw.authorized_line("a1b2c3d", KEY)
         self.assertEqual(c.exception.code, "gw.remote_path")

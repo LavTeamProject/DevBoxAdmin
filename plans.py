@@ -14,6 +14,7 @@
   * весь жизненный цикл — в журнале аудита с идентичностью агента.
 """
 import hashlib
+import hmac
 import json
 import os
 import secrets
@@ -252,14 +253,21 @@ def confirm_direct(summary):
     return _ask(text + "\n\n" + d["direct_foot"], lang)
 
 
+PARAM_ORDER = ["source", "vm", "labels", "minutes", "isolate", "name", "type", "project", "kind"]
+
+
+def ordered_params(p):
+    """Параметры плана в порядке «важное — первым» (не зависит от агента): их видит человек и в диалоге, и в сообщении оператору."""
+    ordered = {k: p["params"][k] for k in PARAM_ORDER if k in p["params"]}
+    ordered.update({k: v for k, v in p["params"].items() if k not in ordered})
+    return json.dumps(ordered, ensure_ascii=False)
+
+
 def _dialog_text(p, lang="ru"):
     d = DIALOG_TEXT[lang]
     view = p.get("view") or {}
     what = view.get("would_run") or ", ".join(view.get("to_install") or []) or view.get("writes") or ""
-    order = ["source", "vm", "labels", "minutes", "isolate", "name", "type", "project", "kind"]
-    ordered = {k: p["params"][k] for k in order if k in p["params"]}
-    ordered.update({k: v for k, v in p["params"].items() if k not in ordered})  # порядок не зависит от агента: важное — первым
-    params = json.dumps(ordered, ensure_ascii=False)
+    params = ordered_params(p)
     warn = d["l3"] + "\n\n" if p.get("level") == "L3" else ""
     return (warn + d["head"].format(agent=p["agent_name"]) + f"\n\n{p['title']}  ({p['operation']}, {p['level']})\n{d['params']}: {params[:700]}\n"
             + (f"{d['what']}: {what[:200]}\n" if what else "")
@@ -279,6 +287,11 @@ def _ask(text, lang, rid=None):
 
 
 def _decide(plan_id, decision, by):
+    with _LOCK:   # проверка статуса и запись решения — атомарно (иначе «одобрить» из диалога затёрло бы параллельное отклонение в панели)
+        _decide_locked(plan_id, decision, by)
+
+
+def _decide_locked(plan_id, decision, by):
     p = next((x for x in _plans() if x["id"] == plan_id), None)
     if not p or _status(p) != "awaiting_human":
         return
@@ -295,33 +308,72 @@ def _decide(plan_id, decision, by):
 
 def approve(body):
     """POST /api/plans/approve {id} — запрос одобрения. В режиме «dialog» запускает системный диалог и возвращается сразу."""
-    p = next((x for x in _plans() if x["id"] == body.get("id")), None)
-    if not p:
-        raise ApiError("План не найден", HTTPStatus.NOT_FOUND, code="plan.not_found")
-    if _status(p) != "pending":
-        raise ApiError("План не ожидает подтверждения", HTTPStatus.CONFLICT, code="plan.not_pending")
-    ch = approval.channel() if (policy()["approval"] != "panel" or p["level"] == "L3") else None
-    if ch is not None and ch["name"] is None:  # нет канала → fail closed, человека не спросить
-        raise ApiError("No approval channel is available on this system (no dialog and no safe root helper); the plan cannot be approved",
-                       HTTPStatus.CONFLICT, code="plan.no_approval_channel", unsafe=",".join(ch.get("unsafe") or []))
-    if policy()["approval"] == "panel" and p["level"] != "L3":  # L3 — ВСЕГДА системный диалог, режим «кнопка в панели» на него не действует
-        _update(p["id"], status="awaiting_human")
-        _decide(p["id"], "approve", "panel")
-    else:
-        _update(p["id"], status="awaiting_human", error=None)
-        core.spawn(lambda: _decide(p["id"], ask_human(p), "dialog"))
+    p0 = next((x for x in _plans() if x["id"] == body.get("id")), None)
+    ch = approval.channel() if (p0 and (policy()["approval"] != "panel" or p0["level"] == "L3")) else None   # проверка канала может быть долгой — до блокировки
+    with _LOCK:   # проверка статуса и его смена — атомарно: удалённое решение оператора не должно «проскочить» между ними
+        p = next((x for x in _plans() if x["id"] == body.get("id")), None)
+        if not p:
+            raise ApiError("План не найден", HTTPStatus.NOT_FOUND, code="plan.not_found")
+        if _status(p) != "pending":
+            raise ApiError("План не ожидает подтверждения", HTTPStatus.CONFLICT, code="plan.not_pending")
+        if ch is not None and ch["name"] is None:  # нет канала → fail closed, человека не спросить
+            raise ApiError("No approval channel is available on this system (no dialog and no safe root helper); the plan cannot be approved",
+                           HTTPStatus.CONFLICT, code="plan.no_approval_channel", unsafe=",".join(ch.get("unsafe") or []))
+        if policy()["approval"] == "panel" and p["level"] != "L3":  # L3 — ВСЕГДА системный диалог, режим «кнопка в панели» на него не действует
+            _update(p["id"], status="awaiting_human")
+            _decide(p["id"], "approve", "panel")
+        else:
+            _update(p["id"], status="awaiting_human", error=None)
+            core.spawn(lambda: _decide(p["id"], ask_human(p), "dialog"))
     return public(next(x for x in _plans() if x["id"] == p["id"]))
 
 
 def reject(body):
-    p = next((x for x in _plans() if x["id"] == body.get("id")), None)
-    if not p:
-        raise ApiError("План не найден", HTTPStatus.NOT_FOUND, code="plan.not_found")
-    if _status(p) not in ("pending", "awaiting_human", "approved"):
-        raise ApiError("План уже не ожидает решения", HTTPStatus.CONFLICT, code="plan.not_pending")
-    _update(p["id"], status="rejected", approval={"by": "panel", "at": time.time(), "mode": "panel"})
+    with _LOCK:
+        p = next((x for x in _plans() if x["id"] == body.get("id")), None)
+        if not p:
+            raise ApiError("План не найден", HTTPStatus.NOT_FOUND, code="plan.not_found")
+        if _status(p) not in ("pending", "awaiting_human", "approved"):
+            raise ApiError("План уже не ожидает решения", HTTPStatus.CONFLICT, code="plan.not_pending")
+        _update(p["id"], status="rejected", approval={"by": "panel", "at": time.time(), "mode": "panel"})
     _audit("reject", p, "ok", by="panel")
     return public(next(x for x in _plans() if x["id"] == p["id"]))
+
+
+# ---------------------------------------------------------------- удалённое решение оператора (Фаза 8, ADR-0003)
+
+def _remote_target(plan_id):
+    p = next((x for x in _plans() if x["id"] == plan_id), None)
+    if not p:
+        raise ApiError("Plan not found", HTTPStatus.NOT_FOUND, code="plan.not_found")
+    if _status(p) != "pending":
+        raise ApiError("The plan is not waiting for a decision", HTTPStatus.CONFLICT, code="plan.not_pending")
+    return p
+
+
+def approve_remote(operator, plan_id, digest):
+    """Одобрение оператором через удалённый API/бота. Только L2 и только с эхом хеша плана; L3 — исключительно системный диалог.
+    Токен/TOTP/право `approve`/глобальную настройку проверяет вызывающий слой (remote_api)."""
+    with _LOCK:
+        p = _remote_target(plan_id)
+        if p["level"] != "L2" or p.get("noop"):
+            raise ApiError("Only an L2 plan can be approved remotely; L3 needs the system dialog on the machine with the panel",
+                           HTTPStatus.FORBIDDEN, code="plan.remote_level", level=p["level"])
+        if not isinstance(digest, str) or len(digest) < 12 or not hmac.compare_digest((p.get("digest") or "")[:len(digest)], digest):
+            raise ApiError("The plan hash does not match what you saw; fetch the plan again", HTTPStatus.CONFLICT, code="plan.digest_mismatch")
+        by = "operator:" + operator["name"]
+        _update(plan_id, status="approved", approval={"by": by, "at": time.time(), "mode": "remote"}, error=None)
+    _audit("approve", p, "ok", by=by, approved_via="remote")
+    return public(next(x for x in _plans() if x["id"] == plan_id))
+
+
+def reject_remote(operator, plan_id):
+    with _LOCK:
+        p = _remote_target(plan_id)
+        by = "operator:" + operator["name"]
+        _update(plan_id, status="rejected", approval={"by": by, "at": time.time(), "mode": "remote"})
+    _audit("reject", p, "ok", by=by, approved_via="remote")
+    return public(next(x for x in _plans() if x["id"] == plan_id))
 
 
 def list_plans(q=None):

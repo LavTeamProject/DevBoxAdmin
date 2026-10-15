@@ -870,7 +870,7 @@ The list is mandatory under principle №5: everything that is not done from the
 
 ---
 
-## Phase 8 — Remote control of the panel (✅ step 1 SSH done; ⬜ client API and Telegram — at the owner's decision)
+## Phase 8 — Remote control of the panel (✅ SSH, ✅ client API and operators, ✅ Telegram bot; ⬜ review of the fixes and a live bot)
 
 The owner's request: the panel runs on a server and can be controlled **from another machine**: over SSH, from Telegram, and through an **API client** (so that your own app/chatbot can be built). Today the panel listens only on `127.0.0.1` and agents use only a local Unix socket ("Out of scope": exposing it to the network is a separate decision). This phase is that decision; it is not implemented until approved.
 
@@ -888,6 +888,8 @@ The owner's request: the panel runs on a server and can be controlled **from ano
 **Owner decisions (2026-10-15):** Telegram is acceptable as a channel — the user supplies **their own** bot; enabling access from the internet, the home network or a VPN is up to **the user**, and the panel itself offers the connection types (the "Remote connection" block on the "Agent connections" page); start with SSH.
 
 **Step 1 (SSH) — done, the scheme changed after checking on VMs.** The `ssh -L` tunnel proved unsafe: a key with `restrict,port-forwarding` still runs commands on the server and forwards the panel's HTTP-API port (the owner's full API). Adopted: a **forced command** in `authorized_keys` — `command="<python> mcp_server.py --agent <id>",restrict <key>`. The key can only start the MCP bridge of one agent: no shell, no forwarding (TCP or Unix socket), any requested command is ignored, the agent's secret never leaves the server (nothing to copy). The client connects with `claude mcp add service-admin -- ssh -i <key> -o IdentitiesOnly=yes -o BatchMode=yes user@host`. The panel builds the `authorized_keys` line from a pasted public key (strict format check) and does not edit the file itself. Verified on two machines: the server with the panel (a VM) and a client (a Mac): 10 L1 tools, `plan_changes` refused, `touch /tmp/PWNED` did not run, TCP/Unix forwarding does not work, no pty. Tests: `tests/test_remote_ssh.py`.
+
+**Steps 2–3 — done (ADR-0003, `docs/en/adr-remote-access.md`):** `remote_api.py` (a separate listener, off by default; TLS and an address list outside localhost; tokens; an attempt limit; `/agent/v1`, `/operator/v1`), `operators.py` (operators, `sao_…` tokens, TOTP RFC 6238), `telegram_bot.py` (the owner's bot, outgoing polling), `plans.approve_remote`, the "Remote connection" block in the UI, `docs/openapi-remote.yaml`, `examples/remote_client.py`, the manual `manuals/en/remote-api-and-telegram.md`, tests `tests/test_remote_api.py`. Every protection-weakening action (turning access on, a non-loopback address, remote approval, an operator with `approve`, the Telegram bot) goes only through the system window.
 
 **Questions for the owner (still open):** Next step (client API or Telegram) — a suggestion: the client API first, the bot is built on it.
 

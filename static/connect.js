@@ -8,11 +8,14 @@ tabs.connect = {
   plans: null,   // /api/plans (очередь подтверждений и история)
   interval: 5000,
   remote: null,  // /api/agent-gateway/remote (типы удалённого подключения; Фаза 8)
+  rapi: null, opsList: null, tg: null, once: null,   // remote.js: API клиентов, операторы, Telegram; once — токен/секрет, показываемый один раз
   remoteAgent: "", remoteKey: "", remoteErr: "",
   fresh: null,   // результат последней регистрации (команда и конфиг для копирования)
   async load(silent) {
-    try { this.data = await api("/api/agent-gateway"); this.ops = await api("/api/operations").catch(() => null); this.plans = await api("/api/plans").catch(() => null); await this.loadRemote(); }
+    try { this.data = await api("/api/agent-gateway"); this.ops = await api("/api/operations").catch(() => null); this.plans = await api("/api/plans").catch(() => null); await this.loadRemote(); await loadRemoteExtra(this); }
     catch (e) { if (!silent) return failView(e); return; }
+    // фоновое обновление не должно стирать то, что человек сейчас вводит в поля
+    if (silent && view.contains(document.activeElement) && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) return;
     this.render();
   },
 
@@ -212,10 +215,9 @@ function remoteSection(tab) {
       <div class="small"><b>3.</b> ${esc(t("gw.remote.step3"))}</div>${pre(st.claude, "claude")}
       <div class="muted small">${esc(t("gw.remote.jsonCfg"))}</div>${pre(st.json, "json")}
       <p class="muted small">${esc(t("gw.remote.safe"))}</p>` : `<p class="muted small">${esc(t("gw.remote.pick"))}</p>`}`;
-  const soon = (id) => `<p class="muted small">${esc(t("gw.remote." + id + ".intro"))}</p><span class="badge gray">${esc(t("gw.remote.soon"))}</span>`;
   return `<h2>${esc(t("gw.remote.title"))}</h2>
     <div class="muted small" style="margin-bottom:8px">${esc(t("gw.remote.intro", { hosts: ssh.hosts.join(", ") || "—" }))}</div>
-    ${card("ssh", sshBody)}${card("api", soon("api"))}${card("telegram", soon("telegram"))}`;
+    ${card("ssh", sshBody)}${remoteApiCard(tab)}${operatorsCard(tab)}${telegramCard(tab)}`;
 }
 handlers.gwRemoteBuild = async () => {
   const tab = tabs.connect;

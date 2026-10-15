@@ -19,6 +19,9 @@ from urllib.parse import parse_qs, urlparse
 
 import agent_gateway
 import agent_socket
+import operators
+import remote_api
+import telegram_bot
 import agent_tasks
 import agents
 import audit
@@ -94,6 +97,9 @@ GET_ROUTES = {
     "/api/plans": plans.list_plans,
     "/api/agent-gateway": agent_gateway.list_agents,
     "/api/agent-gateway/remote": agent_gateway.remote_info,
+    "/api/remote": remote_api.status,
+    "/api/operators": operators.list_operators,
+    "/api/telegram": telegram_bot.status,
     "/api/backups": backups.status,
     "/api/vms": vm.overview,
     "/api/runners": runners.status,
@@ -172,7 +178,16 @@ POST_ROUTES = {
     "/api/agent-gateway/register": agent_gateway.register,
     "/api/agent-gateway/revoke": agent_gateway.revoke,
     "/api/agent-gateway/rotate": agent_gateway.rotate,
-    "/api/agent-gateway/settings": agent_gateway.set_agent,
+    "/api/agent-gateway/settings": remote_api.agent_set,
+    "/api/remote/settings": remote_api.set_settings,
+    "/api/remote/agent-token": remote_api.issue_agent_token,
+    "/api/operators/create": remote_api.op_create,
+    "/api/operators/rotate": remote_api.op_rotate,
+    "/api/operators/revoke": operators.revoke,
+    "/api/operators/unlock": remote_api.op_unlock,
+    "/api/operators/settings": remote_api.op_set,
+    "/api/telegram/settings": telegram_bot.set_settings,
+    "/api/telegram/check": telegram_bot.check,
     "/api/plans/approve": plans.approve,
     "/api/plans/reject": plans.reject,
     "/api/plans/policy": plans.set_policy,
@@ -358,6 +373,10 @@ def main():
     _, sock_err = agent_socket.start()
     if sock_err:
         print(f"agent socket disabled: {sock_err}")
+    remote_api.apply()
+    telegram_bot.apply()
+    if remote_api.status()["error"]:
+        print(f"remote access disabled: {remote_api.status()['error']}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

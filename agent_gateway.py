@@ -16,6 +16,7 @@ import os
 import platform
 import re
 import secrets
+import shlex
 import shutil
 import socket
 import threading
@@ -652,9 +653,10 @@ def authorized_line(agent_id, public_key):
         raise ApiError("Это не похоже на ОДНУ публичную строку ключа SSH (ssh-ed25519 AAAA… комментарий)", code="gw.remote_key")
     py = runtime_info()["python"]
     mcp = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mcp_server.py")
-    if any(c in py + mcp for c in '"\\\n\r\0'):
+    cmd = f"{shlex.quote(py)} {shlex.quote(mcp)} --agent {agent_id}"
+    if any(c in cmd for c in '"\\\n\r\0'):   # проверяем ИТОГОВУЮ строку: shlex.quote для пути с «'» даёт '"'"', а кавычка закрыла бы command="…"
         raise ApiError("Путь установки содержит недопустимые символы для authorized_keys", code="gw.remote_path")
-    return f'command="{py} {mcp} --agent {agent_id}",restrict {key}'
+    return f'command="{cmd}",restrict {key}'
 
 
 def remote_info(q=None):
