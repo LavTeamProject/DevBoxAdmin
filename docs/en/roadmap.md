@@ -760,6 +760,75 @@ Depends on the choice of hypervisor and on the VM check on clean macOS (see the 
 - 🚫 The tools `create_runner` and `manage_vm` are **deliberately not being built**: only `runner.spawn`/`runner.selftest` (through the dialog) are open to L3 agents, and VM management (`vm.*`) is not open to agents — the owner's decision on boundaries; change it only on the owner's new decision.
 ---
 
+## Phase 6 — Linux (⬜ plan approved by the owner, work not started)
+
+**Owner's decisions:** (1) target systems — both a workstation with a screen and a headless server; (2) first distribution — Ubuntu LTS (24.04, then 22.04), then Debian 12; Fedora — later; arm64 and x86_64 architectures; (3) VMs and CI runners are part of the first Linux version.
+**Unchanged principles:** stdlib only, bind to `127.0.0.1`, commands as an argument list without a shell, confirmation of agent actions out of the agent's reach, everything through the operations catalog + audit, RU/EN. Windows and BSD are out of scope.
+**Estimate:** minimal version (L0–L3) ≈ 4 weeks; full (L0–L8) ≈ 7–9 weeks. Every stage ends with: a run in a Linux VM → independent review (code + security) → fixes → recording in `docs/unverified.md` of what is not verified → commit.
+
+**Verification stand (created at L0):** `tart` can run Linux VMs on Apple Silicon — Ubuntu 24.04 arm64 (`ghcr.io/cirruslabs/ubuntu`), with a screen (workstation) and without (`--no-graphics`, server). x86_64 and Debian — only in GitHub Actions (test matrix). The owner's real Linux workstation is "later" (`docs/checklist.md`).
+
+### L0. Foundation and decisions (≈ 3–4 days) ⬜
+- ⬜ "Platform" layer (`platform_info.py`): detection of OS/distribution/architecture, screen or no screen, systemd, privileges, **set of capabilities** (`capabilities`: `pkg.brew`, `pkg.apt`, `service.systemd`, `vm.tart`, `vm.qemu`, `mobile.xcode`, `ui.gui_dialog` …). `GET /api/platform`.
+- ⬜ The interface hides pages without capabilities (Xcode, Herd, OrbStack…); catalog operations get `requires` on capabilities and refuse with a clear code (`platform.unsupported`) rather than an "internal error".
+- ⬜ **ADR "Confirmation channel"** (see L2): the choice and the threat model on paper, before any code.
+- ⬜ Stand: Ubuntu 24.04 arm64 VM (with a screen and without), CI matrix (unit tests without privileges) on ubuntu-24.04 x86_64 and arm64, Debian 12 in a container.
+- ⬜ Rule for CLAUDE.md: new code does not call `brew`/`osascript`/`launchctl` directly, only through the platform layer.
+- Acceptance: on macOS nothing has changed (comparison of the 74 GET routes with the previous version, as with the extraction from `server.py`); on Ubuntu the server starts and `GET /api/platform` is honest.
+
+### L1. Core on Linux (≈ 7–10 days) ⬜
+- ⬜ Installation: `get.sh`/`install.sh` in POSIX sh (not zsh); own Python 3.12 (python-build-standalone, linux, sha256 check); **systemd user service** + `loginctl enable-linger` for the server; `.desktop` shortcut for the workstation; `uninstall`.
+- ⬜ Statistics (`stats.py`): CPU/RAM/swap from `/proc`, temperatures from `/sys/class/hwmon` and `thermal`, battery from `power_supply`, disk, network; GPU — `nvidia-smi`/sysfs, if present; what is missing is "no data", not an error.
+- ⬜ Terminal (PTY), processes/agent sessions (`ps`), `open`/"open Terminal" → `xdg-open`/`x-terminal-emulator`, notifications → `notify-send` (if present).
+- ⬜ Configuration files: a registry of Linux paths (`/etc/hosts`, `~/.bashrc`/`~/.zshrc`, `~/.ssh/config`, git), writing as root through `pkexec` instead of `osascript … administrator`.
+- ⬜ Environment snapshots: `dpkg`/`apt` packages instead of Homebrew; "before/after" comparison.
+- ⬜ System setup (the `#setup` page): Linux version — compiler/`git`/`curl` (`build-essential`), package manager; no "Command Line Tools".
+- Acceptance: a clean Ubuntu 24.04 (with a screen and headless) — installation with one command, the panel opens, the dashboard, terminal, audit and backups work; a guide with screenshots for Linux.
+
+### L2. Confirming agent actions without the macOS dialog (≈ 3–5 days + security review) ⬜
+The principle is the same: an agent with a terminal on this machine must not be able to approve a plan for itself.
+- ⬜ **Channel 1 — screen:** `zenity`/`kdialog` (default "Reject", 110 s = rejection) — only if the user has a graphical session.
+- ⬜ **Channel 2 — headless:** approval with the command `sudo service-admin approve <plan>` — a helper **root script** that needs the human's password; it signs the decision with a key the agent cannot access (file root:root 0600); the panel accepts only signed decisions. An agent without the sudo password cannot approve.
+- ⬜ L3 — only channels 1 or 2; the "button in the panel" mode remains forbidden for L3. If neither channel is available — L2/L3 agent plans are not executed (fail closed).
+- ⬜ Tests with `zenity`/`sudo` replaced (as with `osascript`); an independent security review is mandatory before merging.
+- Acceptance: on Ubuntu with a screen — a real dialog; on Ubuntu without a screen — approval through the human's ssh session; an agent under the same user could not approve by itself (verified by an attempt).
+
+### L3. Packages, services, languages, Docker (≈ 7–10 days) ⬜
+- ⬜ Package manager as a driver (`pkg`): `apt` (search, list, install/remove through `pkexec`, job + audit) and, optionally, Linuxbrew (the same code as for macOS); recommendation catalog and profiles (Foundation, AI, Backend) — a mapping table "Homebrew name → apt package".
+- ⬜ Services: `systemctl` (user and system through polkit) instead of `brew services`; `journalctl` logs; unit-file editor only through the registry.
+- ⬜ Languages: PHP/Node/Python/Go/Rust/Java/Ruby — through nvm/pyenv/rustup/apt; shims and `env` for bash/zsh/fish.
+- ⬜ Docker: `docker` (Engine + compose plugin), without OrbStack; the remote-context guard is already shared.
+- Acceptance: the "Foundation" profile installs on a clean Ubuntu from the panel, "before/after" snapshots show the difference, services start/stop.
+
+### L4. VMs and CI runners on Linux (≈ 10–15 days) ⬜
+- ⬜ **Hypervisor selection ADR** (2-day spike): Incus (VMs + containers, images, snapshots) or libvirt/QEMU (qcow2 with a backing file). Criteria: a disposable clone in seconds, network isolation, working without root, arm64 and x86_64 support.
+- ⬜ VM driver behind the `Driver` interface (list/status/ip/clone/start/stop/snapshot/delete/restore) + recipes (`node`, `build-essential`, runner).
+- ⬜ Guest network isolation through nftables (the analogue of softnet: only the CI server), a warning if it is not enabled.
+- ⬜ Runners: Linux builds of `gitea-runner` and `actions/runner` (sha256 from the release), `runner.spawn`/`runner.selftest` unchanged for the user.
+- Acceptance: CI self-test on a temporary Gitea (as on macOS): an ephemeral runner in a disposable Linux VM, `completed/success`, the VM and the runner are deleted, no token in the logs; isolation: the guest sees only the CI server.
+
+### L5. Operations and agents parity (≈ 3–5 days) ⬜
+- ⬜ All catalog operations have an implementation or an explicit refusal based on capabilities; `verify` for the new operations (apt, systemd, VMs).
+- ⬜ Agent tools (`list_vms`, `list_containers`, …) work on both systems; limits, time budget and the "snapshot before" are unchanged.
+- ⬜ i18n RU = EN, `check-i18n.js` passes; the audit log is the same.
+
+### L6. Developer toolchains (≈ 3–4 days, optional) ⬜
+- ⬜ Android SDK and Flutter on Linux (recipes); Xcode/simulators hidden. Android licenses — confirmation by a human.
+
+### L7. Distribution and documents (≈ 3–5 days) ⬜
+- ⬜ One-command installation on Linux; a `.deb` package (and/or a Linuxbrew formula) — after stabilization.
+- ⬜ Guides `manuals/` and `manuals/en/` for Linux (installation on a clean Ubuntu with screenshots from a VM, connecting a headless agent, runners); README (RU/EN) with a compatibility page.
+- ⬜ The "System setup" page and error messages without mentions of macOS where they are not needed.
+
+### L8. Closing (≈ 3–5 days) ⬜
+- ⬜ Full matrix: Ubuntu 24.04/22.04 (arm64 in tart, x86_64 in CI), Debian 12; with a screen and headless.
+- ⬜ Final independent security review (confirmation channel, root script, nftables, privileges) and a regression on macOS.
+- ⬜ Update `docs/unverified.md` and `docs/checklist.md`: what was verified only in a VM, what is needed on a real Linux workstation and on x86_64.
+
+**Risks:** headless confirmation (L2) is the most sensitive place, until its review the Linux version is not released for L2/L3 agents; distribution diversity — we support an explicit list; verification on real x86_64 "hardware" — only in CI; VMs for CI on Linux are the largest part by volume (L0–L3 and L5 can be released earlier, and L4 as a separate release).
+
+---
+
 ## Deliberate exceptions (cannot be done from the interface — and why)
 
 The list is mandatory under principle №5: everything that is not done from the panel must be named explicitly.
