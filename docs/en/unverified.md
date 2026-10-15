@@ -69,3 +69,9 @@ Format: **what** — why it was not verified — **how you can help**.
 - Owner's HTTPS Gitea 1.27.2: read-only check only — an org-scope source was added with an access token and "Check" returned the user and the runner list (1). Self-test and on-demand runner were NOT run on this server (owner's decision: "Check only").
 
 - `get.sh` (one-command install): download / unpack / checksum check / refusal on a wrong checksum or a bad `SA_REF` were tested locally on a `git archive` tarball (no install). **The full chain was verified in a clean VM (macOS 26.6, vanilla):** `curl … | zsh` from GitHub → sources in `~/.service-admin/app` → `install.sh` (its own Python 3.12, app in /Applications, LaunchAgent) → the panel answers 200 on `127.0.0.1:8765`.
+
+## VM preparation recipes (`vm.recipe`)
+- `node`: verified on a copy of `clean-mac` (host download, sha256, upload, `node --version` in the guest, VM stopped and deleted).
+- `clt`: fully verified in a clean VM with the host VPN off — Command Line Tools for Xcode 26.6 installed in ~3.7 min, `xcode-select -p` = `/Library/Developer/CommandLineTools`, `git` and `clang` work in the guest, the VM was stopped. With a VPN on the host the recipe stops early with a clear "no internet in the guest" error.
+- Node.js integrity: the sha256 comes from the same nodejs.org (the `SHASUMS256.txt.asc` signature is not checked); the file runs only inside a throw-away guest VM. If the VM becomes a CI base, pin versions and sums in the repository.
+- Xcode, Flutter and Android Studio are deliberately not automated by recipes (Apple ID / licences).
