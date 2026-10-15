@@ -8,6 +8,7 @@ import json
 import os
 import plistlib
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -15,8 +16,8 @@ from concurrent.futures import ThreadPoolExecutor
 from http import HTTPStatus
 
 from core import has_clt as core_has_clt
-from core import (BREW_PREFIX, ENV, HOME, PKG_RE, SHIM_DIR, ApiError, load_state, output, run, save_state,
-                  set_env, set_shims, shell_probe, start_job)
+from core import (BREW, BREW_PREFIX, ENV, HOME, PKG_RE, SHIM_DIR, ZSHRC_BLOCK_START, ApiError, load_state, output, run,
+                  save_state, set_env, set_shims, shell_probe, start_job, start_steps)
 
 # key, nama, perintah yang dicek, argumen versi
 LANGS = [
@@ -239,6 +240,35 @@ def python_names(target):
     return link_bin(bindir, ("python3", "pip3", "pydoc3", "idle3"), {"python": "python3", "pip": "pip3"})
 
 
+PY_VERSIONS = ["3.10", "3.11", "3.12", "3.13", "3.14"]     # то, что можно поставить из панели (uv или Homebrew python@X.Y)
+PY_NO_REMOVE = {"pip", "setuptools", "wheel"}
+
+
+def uv_path():
+    """uv: из PATH интерактивной оболочки, а если там нет — из обычного места установки (~/.local/bin/uv; installer uv кладёт его туда)."""
+    p = tools("uv")[0]
+    if p:
+        return p
+    cand = os.path.join(HOME, ".local", "bin", "uv")
+    return cand if os.access(cand, os.X_OK) else None
+
+
+def _externally_managed(path):
+    stdlib = output([path, "-c", "import sysconfig;print(sysconfig.get_path('stdlib'))"])
+    return bool(stdlib) and os.path.exists(os.path.join(stdlib, "EXTERNALLY-MANAGED"))
+
+
+def python_path_setup():
+    """Что нужно, чтобы писать `python3`/`pip` без полного пути: ссылки в ~/.service-admin/bin и блок в ~/.zshrc, ставящий эту папку в начало PATH."""
+    try:
+        with open(os.path.join(HOME, ".zshrc"), encoding="utf-8", errors="replace") as f:
+            block = ZSHRC_BLOCK_START in f.read()
+    except OSError:
+        block = False
+    return {"shim_dir": SHIM_DIR, "zshrc_block": block,
+            "shims": [n for n in ("python", "python3", "pip", "pip3") if os.path.islink(os.path.join(SHIM_DIR, n))]}
+
+
 def python_info(q):
     installs = python_installs()
     path, _ = active("python3")
@@ -246,6 +276,13 @@ def python_info(q):
     info = {"key": "python", "name": "Python", "installs": installs, "selectable": True,
             "selected": load_state().get("python_default") if os.path.islink(os.path.join(SHIM_DIR, "python3")) else None,
             "active": {"path": path, "version": ver, "source": source_of(path)}}
+    info["path_setup"] = python_path_setup()
+    info["install_options"] = {"versions": PY_VERSIONS, "uv": bool(uv_path()), "brew": os.path.exists(BREW)}
+    for i in installs:     # что из панели можно удалить (python.org и системный Python — нет: у них свои установщики/Apple)
+        i["removable"] = i["source"] in ("Homebrew", "uv", "pyenv") and i["id"] != info["selected"] and i["real"] != os.path.realpath(sys.executable)
+    pick = next((i for i in installs if i["id"] == q.get("py")), None) if q.get("py") else None
+    pip_bin = pick["bin"] if pick else path
+    info["pip_python"] = pick["id"] if pick else None
     # pipx (aplikasi CLI Python terisolasi)
     pipx_path, *extra = tools("pipx", "uv", "poetry", "pyenv", "conda")
     pipx = output([pipx_path, "list", "--json"], timeout=30, env=env_for(pipx_path)) if pipx_path else ""
@@ -255,14 +292,13 @@ def python_info(q):
                          "apps": v["metadata"]["main_package"].get("apps", [])} for k, v in venvs.items()]
     except (ValueError, KeyError, TypeError):
         info["pipx"] = None
-    if path:
-        code, out, _ = run([path, "-m", "pip", "list", "--format=json", "--disable-pip-version-check"], timeout=60)
+    if pip_bin:
+        code, out, _ = run([pip_bin, "-m", "pip", "list", "--format=json", "--disable-pip-version-check"], timeout=60)
         try:
             info["packages"] = json.loads(out) if code == 0 else None
         except ValueError:
             info["packages"] = None
-        stdlib = output([path, "-c", "import sysconfig;print(sysconfig.get_path('stdlib'))"])
-        info["externally_managed"] = os.path.exists(os.path.join(stdlib, "EXTERNALLY-MANAGED"))
+        info["externally_managed"] = _externally_managed(pip_bin)
     # python.org: sertifikat SSL belum dipasang -> HTTPS dari Python gagal
     info["cert_fix"] = []
     for i in installs:
@@ -277,10 +313,111 @@ def python_info(q):
     return info
 
 
+def python_install(body):
+    """Установить версию Python: uv (`uv python install 3.12`, без прав администратора) или Homebrew (`python@3.12`)."""
+    ver, via = str(body.get("version", "")), body.get("via")
+    if ver not in PY_VERSIONS:
+        raise ApiError("недопустимая версия Python", code="lang.version_invalid")
+    if via == "uv":
+        uv = uv_path()
+        if not uv:
+            raise ApiError("`uv` не найден", HTTPStatus.NOT_FOUND, code="lang.tool_not_found", name="uv")
+        return {"job": start_job(f"uv python install {ver}", [uv, "python", "install", ver], "python", env=env_for(uv))}
+    if via == "brew":
+        return {"job": start_job(f"brew install python@{ver}", [BREW, "install", "--formula", f"python@{ver}"], "python")}
+    raise ApiError("способ установки: uv или brew", code="lang.install_via_invalid")
+
+
+UV_PY_DIR = os.path.join(HOME, ".local", "share", "uv", "python")
+
+
+def uv_python_dirs(target_bin, root=None):
+    """Папки uv-Python, относящиеся к установке: сама папка и ссылки-псевдонимы (cpython-3.13-…-none → cpython-3.13.15-…-none).
+    Только внутри каталога uv (`root`): всё, что оказалось снаружи, не трогаем."""
+    root = os.path.realpath(root or UV_PY_DIR)
+    real = os.path.realpath(os.path.dirname(os.path.dirname(target_bin)))
+    if os.path.dirname(real) != root:
+        return []
+    return sorted(os.path.join(root, n) for n in os.listdir(root) if os.path.realpath(os.path.join(root, n)) == real)
+
+
+def _remove_uv_python(target_bin, root=None):
+    def step(log):
+        paths = uv_python_dirs(target_bin, root)
+        if not paths:
+            raise RuntimeError("папка Python не найдена внутри каталога uv")
+        for p in sorted(paths, key=lambda x: not os.path.islink(x)):   # сначала ссылки, затем сама папка
+            if os.path.islink(p):
+                os.unlink(p)
+            else:
+                shutil.rmtree(p)
+            log(f"удалено: {p}")
+    return step
+
+
+def python_uninstall(body):
+    """Удалить версию Python, которую поставили uv/Homebrew/pyenv. Нельзя: выбранную по умолчанию, ту, на которой работает сама панель,
+    python.org и системную (их удаляют установщик/Apple). Homebrew сам откажет, если версия нужна другому пакету."""
+    installs = python_installs()
+    target = next((i for i in installs if i["id"] == body.get("id")), None)
+    if not target:
+        raise ApiError("неизвестная версия", HTTPStatus.NOT_FOUND, code="lang.version_unknown")
+    if target["source"] not in ("Homebrew", "uv", "pyenv"):
+        raise ApiError("эту версию панель удалить не может", HTTPStatus.CONFLICT, code="lang.uninstall_unsupported", source=target["source"])
+    if load_state().get("python_default") == target["id"]:
+        raise ApiError("это Python по умолчанию: сначала выберите другой или сбросьте выбор", HTTPStatus.CONFLICT, code="lang.uninstall_default")
+    if target["real"] == os.path.realpath(sys.executable):
+        raise ApiError("на этой версии работает сама панель", HTTPStatus.CONFLICT, code="lang.uninstall_panel")
+    name = target["id"].split(":", 1)[1]
+    if target["source"] == "Homebrew":
+        if not re.fullmatch(r"python@3\.\d+", name):
+            raise ApiError("недопустимое имя", code="lang.version_invalid")
+        return {"job": start_job(f"brew uninstall {name}", [BREW, "uninstall", "--formula", name], "python")}
+    if target["source"] == "uv":
+        ver = str(target.get("version") or "")
+        if not re.fullmatch(r"\d+\.\d+\.\d+", ver):
+            raise ApiError("недопустимая версия", code="lang.version_invalid")
+        uv = uv_path()
+        if not uv:      # uv уже удалён, а его Python остался: это обычные папки в ~/.local/share/uv/python
+            return {"job": start_steps(f"удаление Python {ver} (uv)", [(f"удалить папки uv-Python {ver}", _remove_uv_python(target["bin"]), {})], "python")}
+        return {"job": start_job(f"uv python uninstall {ver}", [uv, "python", "uninstall", ver], "python", env=env_for(uv))}
+    pyenv = need("pyenv")
+    if not re.fullmatch(r"[A-Za-z0-9._+-]+", name):
+        raise ApiError("недопустимое имя", code="lang.version_invalid")
+    return {"job": start_job(f"pyenv uninstall {name}", [pyenv, "uninstall", "-f", name], "python", env=env_for(pyenv))}
+
+
+def python_pip(body):
+    """pip install / uninstall в выбранном интерпретаторе (по умолчанию — «активный», который берёт новый терминал)."""
+    action, name = body.get("action"), str(body.get("name", ""))
+    if not PKG_RE.match(name) or "/" in name or "@" in name:
+        raise ApiError("недопустимое имя пакета", code="lang.package_name_invalid")
+    installs = python_installs()
+    pick = next((i for i in installs if i["id"] == body.get("id")), None) if body.get("id") else None
+    py = pick["bin"] if pick else active("python3")[0]
+    if not py:
+        raise ApiError("Python не найден", HTTPStatus.NOT_FOUND, code="lang.tool_not_found", name="python3")
+    if _externally_managed(py):
+        raise ApiError("этот Python защищён (PEP 668): ставьте через pipx или в виртуальное окружение", HTTPStatus.CONFLICT, code="lang.externally_managed")
+    if action == "pip-uninstall":
+        if name.lower() in PY_NO_REMOVE:
+            raise ApiError("pip, setuptools и wheel удалять нельзя", code="lang.pip_protected", name=name)
+        cmd, label = [py, "-m", "pip", "uninstall", "-y", name], f"pip uninstall {name}"
+    else:
+        cmd, label = [py, "-m", "pip", "install", name], f"pip install {name}"
+    return {"job": start_job(label, cmd, "python", env=ENV)}
+
+
 def python_action(body):
     action, name = body.get("action"), str(body.get("name", ""))
     if action == "select":
         return select_shims("python", python_installs(), body.get("id"), python_names)
+    if action == "install":
+        return python_install(body)
+    if action == "uninstall":
+        return python_uninstall(body)
+    if action in ("pip-install", "pip-uninstall"):
+        return python_pip(body)
     if action == "cert-fix":
         ver = str(body.get("version", ""))
         if not re.fullmatch(r"\d+\.\d+", ver):

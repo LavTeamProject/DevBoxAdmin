@@ -32,21 +32,31 @@ const catTr = (text) => (I18N[LANG] || {})["cd." + text] ?? text;
 
 tabs.packages = {
   interval: 5000,
-  filter: "service",
+  filter: "installed",
+  sort: "name",
+  summary: null,
+  svcError: null,
+  appsError: null,
   apps: null,
   services: [],
   async load(silent) {
-    try {
-      if (silent) {
-        this.services = (await api("/api/services")).services;
-      } else {
-        this.skeleton();
-        const [svcs, apps] = await Promise.all([api("/api/services"), api("/api/apps").catch(() => null)]);
-        this.services = svcs.services;
-        this.apps = apps?.apps || [];
-        if (!this.catalog) api("/api/services/catalog").then((c) => { this.catalog = c.catalog; this.render(); }).catch(() => {});
-      }
-    } catch (e) { return silent || failView(e); }
+    if (silent) {   // фоновое обновление нужно только списку сервисов (состояние запущено/остановлено); остальное меняется по действию человека
+      if (this.filter !== "service") return;
+      try { this.services = (await api("/api/services")).services; this.svcError = null; } catch (e) { this.svcError = e.message; }
+      if ($("pkgList")) this.render();
+      return;
+    }
+    this.skeleton();
+    // сервисы и пакеты грузятся независимо: сбой или медленный `brew services` не должен прятать список пакетов
+    const [svcs, apps] = await Promise.allSettled([api("/api/services"), api("/api/apps")]);
+    this.services = svcs.status === "fulfilled" ? svcs.value.services : [];
+    this.svcError = svcs.status === "rejected" ? svcs.reason.message : null;
+    this.apps = apps.status === "fulfilled" ? apps.value.apps : null;
+    this.summary = apps.status === "fulfilled" ? apps.value.summary || null : null;
+    this.appsError = apps.status === "rejected" ? apps.reason.message : null;
+    if (svcs.status === "rejected" && apps.status === "rejected") return failView(apps.reason);
+    if (this.apps === null) this.apps = [];
+    if (!this.catalog) api("/api/services/catalog").then((c) => { this.catalog = c.catalog; this.render(); }).catch(() => {});
     if ($("pkgList")) this.render();
   },
   skeleton() {
@@ -76,24 +86,28 @@ tabs.packages = {
   render() {
     const all = this.rows(), q = ($("pkgQ")?.value || "").toLowerCase();
     const counts = {
-      service: all.filter((a) => a.svc).length, all: all.filter((a) => a.on_request).length,
+      installed: all.length, all: all.filter((a) => a.on_request).length,
+      deps: all.filter((a) => a.type === "formula" && !a.on_request).length, removable: all.filter((a) => a.removable).length,
       cli: all.filter((a) => a.type === "formula" && a.on_request).length, app: all.filter((a) => a.type === "cask").length,
-      outdated: all.filter((a) => a.outdated).length, recommend: 100,
+      outdated: all.filter((a) => a.outdated).length, service: all.filter((a) => a.svc).length, recommend: 100,
     };
     const running = this.services.filter((s) => s.running).length;
     $("headline").textContent = t("pkg.headline", { run: running, total: this.services.length, n: counts.all });
     $("svcCount").innerHTML = `<i class="nav-dot ${running ? "on" : ""}"></i>${running}/${this.services.length}`;
-    const labels = { service: t("pkg.fService"), all: t("pkg.fAll"), cli: "CLI", app: t("pkg.fApp"), outdated: t("pkg.fUpdates"), recommend: t("pkg.fRecommend") };
+    const labels = { installed: t("pkg.fInstalled"), all: t("pkg.fManual"), deps: t("pkg.fDeps"), removable: t("pkg.fRemovable"), cli: "CLI", app: t("pkg.fApp"),
+                     outdated: t("pkg.fUpdates"), service: t("pkg.fService"), recommend: t("pkg.fRecommend") };
     $("pkgFilter").innerHTML = Object.entries(labels).map(([k, l]) =>
       btn(`${l} <span class="muted">${counts[k]}</span>`, "pkgFilter", { f: k }, this.filter === k ? "active" : "")).join("");
     const match = (a) => !q || a.name.toLowerCase().includes(q) || (a.desc || "").toLowerCase().includes(q);
     if (this.filter === "recommend") return this.renderRecommend(match);
     const pick = {
-      service: (a) => a.svc, all: (a) => a.on_request, cli: (a) => a.type === "formula" && a.on_request,
-      app: (a) => a.type === "cask", outdated: (a) => a.outdated,
+      installed: () => true, service: (a) => a.svc, all: (a) => a.on_request, deps: (a) => a.type === "formula" && !a.on_request, removable: (a) => a.removable,
+      cli: (a) => a.type === "formula" && a.on_request, app: (a) => a.type === "cask", outdated: (a) => a.outdated,
     }[this.filter];
-    const list = all.filter((a) => pick(a) && match(a)).sort((a, b) => (b.svc?.running ? 1 : 0) - (a.svc?.running ? 1 : 0) || a.name.localeCompare(b.name));
-    $("pkgNote").textContent = this.apps === null ? "" : this.filter === "all" ? t("pkg.depsHidden") : "";
+    const bySize = this.sort === "size" && this.filter !== "service";
+    const list = all.filter((a) => pick(a) && match(a)).sort((a, b) => bySize ? (b.size_mb || 0) - (a.size_mb || 0) || a.name.localeCompare(b.name)
+      : (b.svc?.running ? 1 : 0) - (a.svc?.running ? 1 : 0) || a.name.localeCompare(b.name));
+    $("pkgNote").textContent = this.filter === "all" ? t("pkg.depsHidden") : "";
 
     if (this.filter === "service") {
       const cards = list.map((a) => {
@@ -108,7 +122,7 @@ tabs.packages = {
       }).join("");
       const installed = new Set(all.map((a) => a.name));
       const cat = (this.catalog || []).filter((c) => !c.installed && !installed.has(c.formula.split("/").pop()) && match({ name: c.formula, desc: c.desc + c.name }));
-      $("pkgList").innerHTML = `<div class="list">${cards || `<div class="empty">${esc(t("pkg.noServices"))}</div>`}</div>
+      $("pkgList").innerHTML = `${this.banners(all)}<div class="list">${cards || `<div class="empty">${esc(t("pkg.noServices"))}</div>`}</div>
         <h2>${esc(t("pkg.installNewSvc"))}</h2>
         ${this.catalog ? `<div class="grid cat-grid">${cat.map((c) => `<div class="card cat">
             <div class="row" style="flex-wrap:nowrap">${pkgIcon(c.formula, "formula")}<div><b>${esc(c.name)}</b>
@@ -118,8 +132,8 @@ tabs.packages = {
           : `<div class="loading">${esc(t("pkg.loadingCatalog"))}</div>`}`;
       return;
     }
-    $("pkgList").innerHTML = list.length ? `<div class="table-wrap"><table>
-      <tr><th>${esc(t("pkg.thPackage"))}</th><th>${esc(t("pkg.thVersion"))}</th><th>${esc(t("pkg.thService"))}</th><th></th></tr>
+    $("pkgList").innerHTML = this.banners(all) + (list.length ? `<div class="table-wrap"><table>
+      <tr><th>${esc(t("pkg.thPackage"))}</th><th>${esc(t("pkg.thVersion"))}</th><th>${esc(t("pkg.thOrigin"))}</th><th>${esc(t("pkg.thSize"))}</th><th>${esc(t("pkg.thService"))}</th><th></th></tr>
       ${list.map((a) => {
         const d = { name: a.name, type: a.type };
         return `<tr>
@@ -127,14 +141,34 @@ tabs.packages = {
             <b>${esc(a.name)}</b> <span class="badge ${a.type === "cask" ? "blue" : ""}">${a.type === "cask" ? "app" : "cli"}</span>
             <div class="muted small">${esc(a.desc)}</div></div></div></td>
           <td class="small"><code>${esc(a.version)}</code>${a.outdated ? `<br><span class="badge amber">→ ${esc(a.latest || t("pkg.newVer"))}</span>` : ""}</td>
+          <td class="small">${a.type === "cask" ? `<span class="badge blue">${esc(t("pkg.originApp"))}</span>`
+            : a.on_request ? `<span class="badge green">${esc(t("pkg.originManual"))}</span>` : `<span class="badge">${esc(t("pkg.originDep"))}</span>`}
+            ${a.removable ? `<span class="badge amber" title="${esc(t("pkg.removableTitle"))}">${esc(t("pkg.removable"))}</span>` : ""}
+            ${a.used_by?.length ? `<div class="muted small" title="${esc(a.used_by.join(", "))}">${esc(t("pkg.usedBy", { n: a.used_by.length }))}: ${esc(a.used_by.slice(0, 3).join(", "))}${a.used_by.length > 3 ? "…" : ""}</div>` : ""}</td>
+          <td class="small">${a.size_mb != null ? esc(a.size_mb >= 1024 ? (a.size_mb / 1024).toFixed(1) + " GB" : Math.round(a.size_mb) + " MB") : `<span class="muted">–</span>`}</td>
           <td class="small">${a.svc ? `<a href="#service:${encodeURIComponent(a.name)}" class="row" style="gap:6px;text-decoration:none;color:inherit">
             <span class="dot ${svcDot(a.svc)}"></span>${esc(a.svc.status)}</a>` : `<span class="muted">–</span>`}</td>
           <td><div class="actions">
             ${a.outdated ? btn(t("pkg.upgrade"), "pkg", { ...d, action: "upgrade" }, "go") : ""}
             ${a.svc ? `<a class="btn-link" href="#service:${encodeURIComponent(a.name)}">${esc(t("pkg.detail"))}</a>` : ""}
-            ${btn(t("pkg.uninstall"), a.svc ? "svcUninstall" : "pkg", { ...d, action: "uninstall", confirm: t("pkg.confirmUninstall", { name: a.name }) }, "danger")}
+            ${a.used_by?.length && !a.removable ? `<span class="muted small" title="${esc(a.used_by.join(", "))}">${esc(t("pkg.neededBy", { n: a.used_by.length }))}</span>`
+              : btn(t("pkg.uninstall"), a.svc ? "svcUninstall" : "pkg", { ...d, action: "uninstall", confirm: t("pkg.confirmUninstall", { name: a.name }) }, "danger")}
           </div></td></tr>`;
-      }).join("")}</table></div>` : `<div class="empty">${esc(this.apps === null ? t("pkg.loadingShort") : t("pkg.noMatch"))}</div>`;
+      }).join("")}</table></div>` : `<div class="empty">${esc(this.apps === null ? t("pkg.loadingShort") : t("pkg.noMatch"))}</div>`);
+  },
+  // Сводка, «лишние» пакеты, очистка и ошибки brew — над списком (не прячут сам список)
+  banners(all) {
+    const sm = this.summary, rem = all.filter((a) => a.removable), gb = (mb) => (mb >= 1024 ? (mb / 1024).toFixed(1) + " GB" : Math.round(mb) + " MB");
+    return `${this.svcError ? `<div class="warn small" style="margin-bottom:10px">${esc(t("pkg.svcFailed"))}: ${esc(this.svcError)} ${btn(t("pkg.retry"), "pkgReload")}</div>` : ""}
+      ${this.appsError ? `<div class="warn small" style="margin-bottom:10px">${esc(this.appsError)} ${btn(t("pkg.retry"), "pkgReload")}</div>` : ""}
+      ${sm && this.filter !== "service" ? `<div class="card" style="margin-bottom:12px"><div class="row" style="gap:14px;flex-wrap:wrap">
+        <span class="small">${esc(t("pkg.summary", { f: sm.formulae, m: sm.manual, d: sm.deps, c: sm.casks, size: gb(sm.total_mb) }))}</span><span class="spacer"></span>
+        <label class="small">${esc(t("pkg.sort"))} <select id="pkgSort"><option value="name" ${this.sort === "name" ? "selected" : ""}>${esc(t("pkg.sortName"))}</option><option value="size" ${this.sort === "size" ? "selected" : ""}>${esc(t("pkg.sortSize"))}</option></select></label>
+        ${btn(t("pkg.cleanup"), "pkgCleanup", { confirm: t("pkg.confirmCleanup") })}</div>
+        ${rem.length ? `<div class="warn small" style="margin:10px 0 0">${esc(t("pkg.removableBanner", { n: rem.length, size: gb(sm.removable_mb) }))}
+          <div class="mono small" style="margin:6px 0;word-break:break-word">${esc(rem.map((a) => a.name).join(", "))}</div>
+          ${btn(t("pkg.autoremove"), "pkgAutoremove", { confirm: t("pkg.confirmAutoremove", { n: rem.length, list: rem.map((a) => a.name).join(", ") }) }, "danger")}</div>`
+          : `<div class="muted small" style="margin-top:8px">${esc(t("pkg.nothingToRemove"))}</div>`}</div>` : ""}`;
   },
   // 100 paket development yang direkomendasikan, dikelompokkan per kategori
   renderRecommend(match) {
@@ -191,6 +225,10 @@ handlers.recInstall = (d) => runJob(api("/api/apps/action", { name: d.name, type
   () => { tabs.packages.recommend = null; reloadPackages(); });
 handlers.pkgCloseSearch = () => { $("pkgResults").innerHTML = ""; };
 handlers.pkg = (d) => runJob(api("/api/apps/action", { name: d.name, type: d.type, action: d.action }), reloadPackages);
+handlers.pkgReload = () => tabs.packages.load();
+handlers.pkgAutoremove = () => runJob(api("/api/apps/action", { action: "autoremove" }), reloadPackages);
+handlers.pkgCleanup = () => runJob(api("/api/apps/action", { action: "cleanup" }), reloadPackages);
+document.addEventListener("change", (ev) => { if (ev.target.id === "pkgSort") { tabs.packages.sort = ev.target.value; tabs.packages.render(); } });
 handlers.pkgUpgradeAll = () => runJob(api("/api/apps/action", { action: "upgrade-all" }), reloadPackages);
 handlers.svcInstall = (d) => runJob(api("/api/services/install", { formula: d.formula }), () => { tabs.packages.catalog = null; reloadPackages(); });
 handlers.svcUninstall = (d) => runJob(api("/api/services/uninstall", { name: d.name }), () => {

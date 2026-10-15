@@ -10,6 +10,7 @@
 | [install-linux.md](install-linux.md) | Установка на **Linux** (Ubuntu/Debian): одна команда или `.deb`, служба systemd, подготовка системы, профили, пакеты и службы — со скриншотами |
 | [connect-ai-agent-linux.md](connect-ai-agent-linux.md) | ИИ-агент на Linux: как человек подтверждает действия (окно или `service-admin approve`), когда канал отключается |
 | [connect-ai-agent-remote.md](connect-ai-agent-remote.md) | Удалённый агент по SSH: ограниченный ключ запускает только мост MCP одного агента |
+| [python-and-homebrew.md](python-and-homebrew.md) | Python (версии, по умолчанию без полного пути, pip-пакеты) и пакеты Homebrew (лишние, размер) |
 | [connect-agents-wizards.md](connect-agents-wizards.md) | Страница «Подключение агентов»: разделы, мастера и где вы одобряете действия |
 | [remote-api-and-telegram.md](remote-api-and-telegram.md) | Удалённый API для своего приложения, операторы (TOTP) и Telegram-бот |
 | [ci-runners-linux.md](ci-runners-linux.md) | CI-раннеры на Linux: QEMU без root, основа из образа Ubuntu, изоляция сети, KVM |

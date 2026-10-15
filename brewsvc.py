@@ -3,23 +3,27 @@
 Вынесено из server.py: страницы и агенты вызывают одни и те же функции (изменения пакетов исполняет `operations.run_package`).
 Только стандартная библиотека; команды — списком аргументов, без shell.
 """
+import glob
 import json
+import os
 import sys
 from http import HTTPStatus
 
 import aptsvc
 import operations
 import systemdsvc
-from core import BREW, PKG_RE, ApiError, loads_or, pid_tree_stats, run, tail
+from core import BREW, BREW_PREFIX, ENV, PKG_RE, ApiError, loads_or, pid_tree_stats, run, start_job, tail
 
 
 SERVICE_ACTIONS = {"start", "stop", "restart", "run", "kill"}
+# Команды ЧТЕНИЯ не должны запускать авто-обновление Homebrew (оно скачивает индексы и на медленном канале держит страницу минутами)
+RO_ENV = dict(ENV, HOMEBREW_NO_AUTO_UPDATE="1", HOMEBREW_NO_ANALYTICS="1")
 
 
 def list_services():
     if sys.platform != "darwin":  # Linux: systemd / apt (Фаза 6, Л3)
         return systemdsvc.list_services()
-    code, out, err = run([BREW, "services", "info", "--all", "--json"])
+    code, out, err = run([BREW, "services", "info", "--all", "--json"], env=RO_ENV)
     if code != 0:
         raise ApiError(err.strip() or "Ошибка brew services", HTTPStatus.INTERNAL_SERVER_ERROR, code=None if err.strip() else "srv.brew_services_failed")
     services = loads_or(out, [])  # без единого сервиса brew печатает пустой вывод, а не []
@@ -67,28 +71,88 @@ def service_logs(q):
             "log_path": svc.get("log_path"), "error_log_path": svc.get("error_log_path")}
 
 
-def list_apps():
-    if sys.platform != "darwin":  # Linux: systemd / apt (Фаза 6, Л3)
-        return aptsvc.list_apps()
-    code, out, err = run([BREW, "info", "--json=v2", "--installed"], timeout=120)
-    if code != 0:
-        raise ApiError(err.strip() or "Ошибка brew info", HTTPStatus.INTERNAL_SERVER_ERROR, code=None if err.strip() else "srv.brew_info_failed")
-    data = json.loads(out)
+def _short(name):
+    return str(name).split("/")[-1]
+
+
+def build_apps(data, sizes_kb=None):
+    """Данные `brew info --json=v2 --installed` → список пакетов с происхождением (вручную / зависимость), «кто использует», размером
+    и признаком «можно удалить» (то же множество, что снимет `brew autoremove`: не поставлено вручную и не нужно ни одному нужному пакету)."""
+    sizes_kb = sizes_kb or {}
+    forms = data.get("formulae", [])
+    names = {f["name"] for f in forms}
+    deps = {}
+    for f in forms:
+        d = set()
+        for inst in f.get("installed", []):
+            for rd in inst.get("runtime_dependencies") or []:
+                n = _short(rd.get("full_name") or "")
+                if n in names and n != f["name"]:
+                    d.add(n)
+        deps[f["name"]] = sorted(d)
+    used_by = {n: [] for n in names}
+    for n, ds in deps.items():
+        for d in ds:
+            used_by[d].append(n)
+    on_req = {f["name"]: any(i.get("installed_on_request") for i in f.get("installed", [])) for f in forms}
+    roots = {n for n, v in on_req.items() if v}
+    for c in data.get("casks", []):                         # формулы, нужные установленным приложениям, удалять нельзя
+        for d in ((c.get("depends_on") or {}).get("formula") or []):
+            if _short(d) in names:
+                roots.add(_short(d))
+    needed, stack = set(), list(roots)
+    while stack:
+        n = stack.pop()
+        if n in needed:
+            continue
+        needed.add(n)
+        stack.extend(deps.get(n, []))
     formulae = [{
         "name": f["name"], "type": "formula", "desc": f.get("desc") or "",
         "version": ", ".join(i["version"] for i in f.get("installed", [])),
         "latest": (f.get("versions") or {}).get("stable"),
         "outdated": bool(f.get("outdated")), "pinned": bool(f.get("pinned")),
-        "on_request": any(i.get("installed_on_request") for i in f.get("installed", [])),
-        "service": bool(f.get("service")), "homepage": f.get("homepage"),
-    } for f in data.get("formulae", [])]
+        "on_request": on_req[f["name"]], "service": bool(f.get("service")), "homepage": f.get("homepage"),
+        "used_by": sorted(used_by[f["name"]]), "deps": deps[f["name"]], "removable": f["name"] not in needed,
+        "size_mb": round(sizes_kb[f["name"]] / 1024, 1) if f["name"] in sizes_kb else None,
+    } for f in forms]
     casks = [{
         "name": c["token"], "type": "cask", "desc": c.get("desc") or ", ".join(c.get("name") or []),
         "version": c.get("installed") or "", "latest": c.get("version"),
         "outdated": bool(c.get("outdated")), "pinned": False, "on_request": True,
-        "service": False, "homepage": c.get("homepage"),
+        "service": False, "homepage": c.get("homepage"), "used_by": [], "deps": [], "removable": False, "size_mb": None,
     } for c in data.get("casks", [])]
-    return {"apps": formulae + casks}
+    rem = [a for a in formulae if a["removable"]]
+    summary = {"formulae": len(formulae), "manual": sum(1 for a in formulae if a["on_request"]), "deps": sum(1 for a in formulae if not a["on_request"]),
+               "casks": len(casks), "removable": len(rem), "removable_mb": round(sum(a["size_mb"] or 0 for a in rem), 1),
+               "total_mb": round(sum(a["size_mb"] or 0 for a in formulae), 1)}
+    return {"apps": formulae + casks, "summary": summary}
+
+
+def _cellar_sizes():
+    """Размер каждой установленной формулы в Cellar (КБ), одним вызовом du."""
+    dirs = sorted(glob.glob(os.path.join(BREW_PREFIX, "Cellar", "*")))
+    if not dirs:
+        return {}
+    try:
+        code, out, _ = run(["/usr/bin/du", "-sk", *dirs], timeout=60)
+    except Exception:  # noqa: BLE001 — размер — украшение, страница не должна из-за него падать
+        return {}
+    sizes = {}
+    for line in out.splitlines():
+        kb, _, path = line.partition("\t")
+        if kb.isdigit():
+            sizes[os.path.basename(path)] = int(kb)
+    return sizes
+
+
+def list_apps():
+    if sys.platform != "darwin":  # Linux: systemd / apt (Фаза 6, Л3)
+        return aptsvc.list_apps()
+    code, out, err = run([BREW, "info", "--json=v2", "--installed"], timeout=120, env=RO_ENV)
+    if code != 0:
+        raise ApiError(err.strip() or "Ошибка brew info", HTTPStatus.INTERNAL_SERVER_ERROR, code=None if err.strip() else "srv.brew_info_failed")
+    return build_apps(json.loads(out), _cellar_sizes())
 
 
 def search_apps(q):
@@ -113,6 +177,10 @@ def app_action(body):
     name, kind, action = body.get("name", ""), body.get("type"), body.get("action")
     if action == "upgrade-all":
         return operations.run_upgrade_all()
+    if action == "autoremove":      # убрать зависимости, которые больше никому не нужны (список видит человек на странице до нажатия)
+        return {"job": start_job("brew autoremove", [BREW, "autoremove"], "brew")}
+    if action == "cleanup":         # старые версии и кэш загрузок
+        return {"job": start_job("brew cleanup", [BREW, "cleanup"], "brew")}
     if not PKG_RE.match(name) or kind not in ("formula", "cask"):
         raise ApiError("Недопустимое имя пакета", code="srv.pkg_invalid")
     if action not in ("install", "uninstall", "upgrade", "reinstall"):

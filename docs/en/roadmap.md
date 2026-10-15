@@ -897,6 +897,15 @@ The owner's request: the panel runs on a server and can be controlled **from ano
 
 ---
 
+## Phase 9 — Python and Homebrew packages: management from the panel (✅ done; ⬜ install/uninstall check on a clean macOS)
+
+The owner's request: see the installed Pythons and their packages, install and remove versions, switch the main one so that `python3` works without a full path; see the Homebrew packages and remove the unneeded.
+- ✅ **Python** ("Languages → Python"): installing a version 3.10–3.14 via uv or Homebrew (`python@X.Y`); removing versions installed by uv/Homebrew/pyenv (not allowed: the default one, the one the panel runs on, python.org and the system one; if uv is already gone, the folders inside `~/.local/share/uv/python` are removed); pip packages of the chosen interpreter: list, install, uninstall (pip/setuptools/wheel are protected, for PEP 668 ones a hint about pipx); a card "How to call it without a full path" (python/python3/pip/pip3 links in `~/.service-admin/bin` and a block in `~/.zshrc`, the status and what to do).
+- ✅ **Homebrew** ("Packages & services"): filters "All installed", "Installed by you", "Dependencies", "Unneeded"; each package shows its origin, "needed by" and size; a summary (formulae/manual/dependencies/apps, disk space); "unneeded" are exactly what `brew autoremove` would remove (checked against `brew autoremove --dry-run`), buttons "Remove unneeded" and "Clean the cache and old versions" (confirmed with the list); a package needed by others is not offered for removal.
+- ✅ **A page failure fixed**: brew reads (`services info`, `info --installed`) now run with `HOMEBREW_NO_AUTO_UPDATE=1` (before, Homebrew's auto-update over a slow channel held the call for more than 60 s and the page did not open at all); services and packages load independently — a failure of one does not hide the other; background refresh only on the services tab.
+
+---
+
 ## 🚫 Out of scope (deliberately)
 
 - **Exposing the panel to the network.** Only through an SSH tunnel. If the bind is ever widened, that is a separate

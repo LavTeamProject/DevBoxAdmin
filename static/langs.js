@@ -96,7 +96,7 @@ function makeLangTab(key) {
     data: null,
     async load() {
       let d;
-      try { d = await api(`/api/lang?key=${key}`); } catch (e) { return failView(e); }
+      try { d = await api(`/api/lang?key=${key}${this.py ? `&py=${encodeURIComponent(this.py)}` : ""}`); } catch (e) { return failView(e); }
       this.data = d;
       this.render();
     },
@@ -115,7 +115,9 @@ function makeLangTab(key) {
             ${sel === i.id ? `<span class="badge green">${esc(t("lang.defaultBadge"))}</span>` : ""}
             ${i.registered === false ? `<span class="badge amber" title="${esc(t("lang.notRegisteredTitle"))}">${esc(t("lang.notRegistered"))}</span>` : ""}</div>
             <div class="meta"><code>${esc(i.home || i.bin)}</code></div></div>
-          <div class="actions">${d.selectable && sel !== i.id ? btn(t("lang.makeDefault"), "langAct", { key, action: "select", id: i.id }, "primary") : ""}</div>
+          <div class="actions">${d.selectable && sel !== i.id ? btn(t("lang.makeDefault"), "langAct", { key, action: "select", id: i.id }, "primary") : ""}
+            ${key === "python" && i.removable ? btn(t("lang.uninstall"), "langAct", { key, action: "uninstall", id: i.id, job: 1, confirm: t("lang.confirmUninstallVersion", { v: i.version || "", src: i.source }) }, "danger")
+              : key === "python" ? `<span class="muted small" title="${esc(sel === i.id ? t("lang.cantRemoveDefault") : ["Homebrew", "uv", "pyenv"].includes(i.source) ? t("lang.cantRemovePanel") : t("lang.cantRemoveSource", { src: i.source }))}">${esc(t("lang.cantRemove"))}</span>` : ""}</div>
         </div>`).join("")}</div>` : "";
       view.innerHTML = `
         <p style="margin:0 0 12px"><a href="#langs">${esc(t("lang.backLink"))}</a></p>
@@ -155,11 +157,44 @@ function bindForm(id, fn) {
 }
 const langJob = (key, action, name = "") => runJob(api("/api/lang/action", { key, action, name }), () => current.load());
 
+// Python: установка версии, как вызывать без полного пути
+function pyInstallCard(d) {
+  const o = d.install_options;
+  if (!o) return "";
+  const have = new Set(d.installs.map((i) => (i.version || "").split(".").slice(0, 2).join(".")));
+  return `<h2>${esc(t("lang.pyInstallTitle"))}</h2><div class="card"><p class="muted small">${esc(t("lang.pyInstallText"))}</p>
+    <div class="row" style="gap:10px;flex-wrap:wrap;align-items:center">
+      <select id="pyVer">${o.versions.map((v) => `<option value="${v}">${v}${have.has(v) ? " ✓" : ""}</option>`).join("")}</select>
+      <label class="small"><input type="radio" name="pyVia" value="uv" ${o.uv ? "checked" : "disabled"}> uv ${o.uv ? "" : `(${esc(t("lang.notInstalled"))})`}</label>
+      <label class="small"><input type="radio" name="pyVia" value="brew" ${!o.uv && o.brew ? "checked" : ""} ${o.brew ? "" : "disabled"}> Homebrew</label>
+      ${btn(t("profiles.install"), "pyInstall", {}, "go")}</div>
+    <div class="muted small" style="margin-top:6px">${esc(t("lang.pyInstallHow"))}</div></div>`;
+}
+function pyPathCard(d) {
+  const p = d.path_setup;
+  if (!p) return "";
+  const ok = d.selected && p.zshrc_block && p.shims.length;
+  return `<h2>${esc(t("lang.pathTitle"))}</h2><div class="card">
+    <p class="small">${ok ? `✓ ${esc(t("lang.pathOk", { names: p.shims.join(", ") }))}` : esc(t("lang.pathNot", { path: d.active.path || "?", v: d.active.version || "?" }))}</p>
+    <ul class="small muted" style="margin:6px 0 0 18px;line-height:1.6">
+      <li>${esc(t("lang.pathHow", { dir: p.shim_dir }))}</li>
+      <li>${p.zshrc_block ? `✓ ${esc(t("lang.pathBlockYes"))}` : esc(t("lang.pathBlockNo"))}</li>
+      <li>${esc(t("lang.pathApply"))}</li></ul></div>`;
+}
+handlers.pyInstall = async () => {
+  const ver = $("pyVer").value, via = document.querySelector('input[name="pyVia"]:checked')?.value;
+  if (!via) throw new Error(t("lang.pyNoMethod"));
+  return runJob(api("/api/lang/action", { key: "python", action: "install", version: ver, via }), () => current.load());
+};
+handlers.langPip = async (d) => runJob(api("/api/lang/action", { key: "python", action: "pip-uninstall", name: d.name, id: current.py || "" }), () => current.load());
+
 const LANG_RENDER = {
   python: {
     warn: (d) => (d.cert_fix || []).map((v) => `<div class="warn row">${t("lang.pyCert", { v: esc(v) })}
       <span class="spacer"></span>${btn(t("lang.fixNow"), "langAct", { key: "python", action: "cert-fix", version: v, job: 1 }, "primary")}</div>`).join(""),
     body: (d) => `
+      ${pyInstallCard(d)}
+      ${pyPathCard(d)}
       <h2 class="row">${esc(t("lang.pipxApps"))} <span class="spacer"></span>
         ${d.pipx?.length ? btn(t("lang.upgradeAll"), "langAct", { key: "python", action: "pipx-upgrade-all", job: 1 }) : ""}</h2>
       ${d.pipx == null ? `<div class="muted small">${t("lang.pipxMissing")}</div>` : `
@@ -168,17 +203,21 @@ const LANG_RENDER = {
           <td><div class="actions">${btn(t("lang.upgrade"), "langAct", { key: "python", action: "pipx-upgrade", name: p.name, job: 1 })}
             ${btn(t("lang.uninstall"), "langAct", { key: "python", action: "pipx-uninstall", name: p.name, job: 1, confirm: t("lang.confirmUninstall", { name: p.name }) }, "danger")}</div></td></tr>`))}
         <form class="row" id="pipxInstall" style="margin-top:10px"><input type="text" name="name" placeholder="${esc(t("lang.phPipx"))}" style="flex:1;max-width:320px"><button class="go">pipx install</button></form>`}
-      <h2 class="row">${esc(t("lang.pipPackages"))} <span class="spacer"></span><input type="search" id="pipFilter" placeholder="${esc(t("lang.filter"))}"></h2>
-      ${d.externally_managed ? `<p class="muted small">${t("lang.pep668")}</p>` : ""}
+      <h2 class="row">${esc(t("lang.pipPackages"))} <span class="spacer"></span>
+        <select id="pipPy" title="${esc(t("lang.pipFor"))}"><option value="">${esc(t("lang.pipActive"))}</option>${d.installs.map((i) => `<option value="${esc(i.id)}" ${d.pip_python === i.id ? "selected" : ""}>${esc(i.version || "?")} · ${esc(i.source)}</option>`).join("")}</select>
+        <input type="search" id="pipFilter" placeholder="${esc(t("lang.filter"))}"></h2>
+      ${d.externally_managed ? `<p class="muted small">${t("lang.pep668")}</p>` : `<form class="row" id="pipInstall" style="margin-bottom:10px"><input type="text" name="name" placeholder="${esc(t("lang.phPip"))}" style="flex:1;max-width:320px"><button class="go">pip install</button></form>`}
       <div id="pipList">${d.packages ? "" : `<div class="muted small">${esc(t("lang.pipReadFail"))}</div>`}</div>
       ${d.tools?.length ? `<h2>${esc(t("lang.pyTools"))}</h2><div class="card"><dl class="kv">${d.tools.map(([n, v, p]) => `<dt>${esc(n)}</dt><dd>${esc(v || "")} <span class="muted small"><code>${esc(p)}</code></span></dd>`).join("")}</dl></div>` : ""}`,
     bind(d) {
       bindForm("pipxInstall", (v) => langJob("python", "pipx-install", v));
+      bindForm("pipInstall", (v) => runJob(api("/api/lang/action", { key: "python", action: "pip-install", name: v, id: current.py || "" }), () => current.load()));
+      if ($("pipPy")) $("pipPy").onchange = (e) => { current.py = e.target.value; current.load(); };
       const draw = () => {
         if (!d.packages) return;
         const q = ($("pipFilter")?.value || "").toLowerCase();
-        $("pipList").innerHTML = tableOf([t("lang.thPackage"), t("common.version")], d.packages.filter((p) => p.name.toLowerCase().includes(q))
-          .map((p) => `<tr><td>${esc(p.name)}</td><td><code>${esc(p.version)}</code></td></tr>`));
+        $("pipList").innerHTML = tableOf([t("lang.thPackage"), t("common.version"), ""], d.packages.filter((p) => p.name.toLowerCase().includes(q))
+          .map((p) => `<tr><td>${esc(p.name)}</td><td><code>${esc(p.version)}</code></td><td>${d.externally_managed || ["pip", "setuptools", "wheel"].includes(p.name.toLowerCase()) ? "" : `<div class="actions">${btn(t("lang.uninstall"), "langPip", { name: p.name, confirm: t("lang.confirmUninstall", { name: p.name }) }, "danger")}</div>`}</td></tr>`));
       };
       if ($("pipFilter")) $("pipFilter").oninput = draw;
       draw();
@@ -256,7 +295,7 @@ const LANG_RENDER = {
 
 handlers.brewUpgrade = (d) => runJob(api("/api/apps/action", { name: d.name, type: "formula", action: "upgrade" }), () => current.load());
 handlers.langAct = async (d) => {
-  const body = { key: d.key, action: d.action, id: d.id, name: d.name, version: d.version };
+  const body = { key: d.key, action: d.action, id: d.id, name: d.name, version: d.version, via: d.via };
   if (d.job) return runJob(api("/api/lang/action", body), () => current.load());
   const r = await api("/api/lang/action", body);
   toast(r.output || t("lang.done"));
