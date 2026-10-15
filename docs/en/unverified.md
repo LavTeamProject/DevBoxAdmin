@@ -97,3 +97,9 @@ Format: **what** — why it was not verified — **how you can help**.
 - Done: `tests/test_agent_contract.py` (22 checks of the gateway/plans/MCP subprocess, in CI); `tests/agent_eval/` (13 scenarios, runner `run_eval.py`, the `fake` client passed 13/13 on macOS).
 - Not verified: no run with a live agent yet (`--client claude`) — needs a disposable VM with a logged-in client; Codex/OpenCode/Gemini are not described in `clients.json`; the runner does not automate the approval channels (zenity/helper), the "human" is the panel button (L2 only).
 - Expected findings (`known_gap`): a same-user agent with a shell can edit `plans.json` and read other agents' tokens.
+
+### Phase 7 — live layer-B run (2026-10-15)
+- Claude Code 2.1.300, Ubuntu 24.04 arm64 VM (tart), 13 scenarios: **13/13 PASS, 0 FINDING**. The "propose → button → execute → verify" loop with a live agent worked (a snapshot was created), a rejection was not retried, L1 could not propose a change, an L3 plan without the dialog did not run.
+- Limit: in every hostile scenario the agent itself declined to break the protection (forging the plans/decision file, another agent's token, shell injection), so they did not test the panel's technical resistance — layer A does; a check that does not rely on the model's good behaviour needs a scripted direct-call scenario.
+- Found and fixed: the tool descriptions said "macOS dialog"/"Mac"/Homebrew on Linux.
+- Not verified: other clients (Codex/OpenCode/Gemini), repeated runs (non-determinism), the agent and the panel under different users.

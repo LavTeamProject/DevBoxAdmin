@@ -291,7 +291,7 @@ def t_list_capabilities(p, agent=None):
             "machine": {"command_line_tools": bool(st and st["items"][0]["installed"]), "homebrew": bool(st and st["items"][1]["installed"])},
             "can_propose_changes": bool(agent and LEVELS.get(agent["level"], 0) >= 2),
             "note": "Read tools need level L1. Proposing changes (plan_changes) needs level L2, which the user grants in the panel; every "
-                    "change is executed only after the user approves it in a macOS dialog."}
+                    "change is executed only after the user approves it in the system approval dialog (or the approval helper on Linux)."}
 
 
 def t_inspect_profile(p, agent=None):
@@ -477,8 +477,8 @@ _WRITE = {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": Fal
 
 TOOLS = {
     "inspect_system": {"level": "L1", "fn": t_inspect_system, "schema": lambda: _schema({}),
-                       "description": "Describe this Mac: macOS version, architecture, CPU/RAM, free disk, and whether the prerequisites "
-                                      "(Command Line Tools, Homebrew, git, bundled Python) are installed. Read-only."},
+                       "description": "Describe this computer: OS version (macOS or Linux), architecture, CPU/RAM, free disk, and whether the prerequisites "
+                                      "(git, bundled Python; on macOS also Command Line Tools and Homebrew) are installed. Read-only."},
     "list_capabilities": {"level": "L1", "fn": t_list_capabilities, "schema": lambda: _schema({}),
                           "description": "List the tools available to this agent, their permission level, rate limits and the install profiles "
                                          "this machine supports. Read-only."},
@@ -501,7 +501,7 @@ TOOLS = {
                      "schema": lambda: _schema({"operation": {"type": "string", "enum": _agent_ops()},
                                                 "params": {"type": "object", "additionalProperties": True, "description": "Parameters of the operation (see describe_operation)"}}, ["operation"]),
                      "description": "Propose a change. Nothing is executed: the panel validates the request and returns a plan with an id and an expiry; "
-                                    "the user must approve it in a macOS dialog before execute_plan will run it. Only the operations listed in "
+                                    "the user must approve it in the system approval dialog before execute_plan will run it. Only the operations listed in "
                                     "list_operations.agent_operations are allowed. Needs agent level L2."},
     "get_plan": {"level": "L2", "fn": t_get_plan, "schema": lambda: _schema(_pid(), ["plan_id"]),
                  "description": "Get the state of one of your plans: pending, awaiting_human, approved, rejected, expired, executing, done, failed, stale."},
