@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Service Admin</title>
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="icon-192.png" sizes="192x192" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="theme-color" content="#2563eb">
+<script>
+  // terapkan tema sebelum render supaya tidak berkedip
+  try { const t = localStorage.getItem("theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch {}
+</script>
+<link rel="stylesheet" href="vendor/xterm.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="shell">
+  <aside id="sidebar">
+    <div class="brand">
+      <img src="icon-192.png" class="logo" alt="">
+      <div><b>Service Admin</b><div class="muted small" id="hostName">Mac</div></div>
+    </div>
+    <nav id="tabs">
+      <div class="nav-label" data-i18n="nav.group.monitor">Мониторинг</div>
+      <a href="#dashboard"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg><span class="nav-name" data-i18n="nav.dashboard">Дашборд</span></a>
+      <a href="#setup" data-nav="setup"><svg viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z"/></svg><span class="nav-name" data-i18n="nav.setup">Подготовка системы</span></a>
+      <div class="nav-label" data-i18n="nav.group.dev">Разработка</div>
+      <a href="#projects" data-nav="projects"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M3 11h18"/></svg><span class="nav-name" data-i18n="nav.projects">Проекты</span></a>
+      <a href="#agents" data-nav="agents"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/><path d="M8 9h.01M12 9h.01M16 9h.01"/></svg><span class="nav-name" data-i18n="nav.agents">AI-сессии</span></a>
+      <a href="#mobile" data-nav="mobile"><svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 5h2M11 18h2"/></svg><span class="nav-name" data-i18n="nav.mobile">Мобильные тулчейны</span></a>
+      <a href="#profiles" data-nav="profiles"><svg viewBox="0 0 24 24"><path d="M12 3 3 7.5 12 12l9-4.5z"/><path d="m3 12 9 4.5 9-4.5M3 16.5 12 21l9-4.5"/></svg><span class="nav-name" data-i18n="nav.profiles">Профили установки</span></a>
+      <div class="nav-label" data-i18n="nav.group.manage">Управление</div>
+      <a href="#packages"><svg viewBox="0 0 24 24"><path d="m7.5 4.27 9 5.15M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg><span class="nav-name" data-i18n="nav.packages">Пакеты и сервисы</span><span class="nav-ver" id="svcCount"></span></a>
+      <a href="#docker" data-nav="docker"><svg viewBox="0 0 24 24"><path d="M22 12.5c-.5-.3-1.6-.4-2.4-.3-.2-.8-.7-1.5-1.3-2l-.4-.3-.3.4c-.4.6-.6 1.5-.5 2.2.1.4.2.9.5 1.2-.6.3-1.4.4-2.1.4H2.1c-.2 1.6.1 3.2.9 4.5.8 1.3 2.3 2.1 4.8 2.1 4.7 0 8.3-2.2 9.9-6.8 1 0 2.5 0 3.3-1.5l.2-.4z"/><path d="M5 11h2v2H5zM8 11h2v2H8zM11 11h2v2h-2zM8 8h2v2H8zM11 8h2v2h-2z"/></svg><span class="nav-name" data-i18n="nav.docker">Docker</span></a>
+      <a href="#herd" data-nav="herd"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 4 10 15 15 0 0 1-4 10 15 15 0 0 1-4-10 15 15 0 0 1 4-10z"/></svg><span class="nav-name" data-i18n="nav.herd">Herd</span></a>
+      <a href="#langs" data-nav="langs"><svg viewBox="0 0 24 24"><path d="m16 18 6-6-6-6M8 6l-6 6 6 6"/></svg><span class="nav-name" data-i18n="nav.langs">Языки</span></a>
+      <div class="nav-label" data-i18n="nav.group.config">Настройка</div>
+      <a href="#config"><svg viewBox="0 0 24 24"><path d="m4 17 6-6-6-6M12 19h8"/></svg><span class="nav-name" data-i18n="nav.config">Файлы конфигурации</span></a>
+      <a href="#connect" data-nav="connect"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg><span class="nav-name" data-i18n="nav.connect">Подключение агентов</span></a>
+      <a href="#backups" data-nav="backups"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg><span class="nav-name" data-i18n="nav.backups">Резервные копии</span></a>
+      <a href="#vms" data-nav="vms"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg><span class="nav-name" data-i18n="nav.vms">Виртуальные машины</span></a>
+      <a href="#runs" data-nav="runs"><svg viewBox="0 0 24 24"><path d="m5 3 14 9-14 9z"/></svg><span class="nav-name" data-i18n="nav.runs">Запуски</span></a>
+      <a href="#snapshots" data-nav="snapshots"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h2l1.5-2h7L17 5h2a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="3.5"/></svg><span class="nav-name" data-i18n="nav.snapshots">Снимки</span></a>
+      <a href="#audit" data-nav="audit"><svg viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="m9 14 2 2 4-4"/></svg><span class="nav-name" data-i18n="nav.audit">Аудит</span></a>
+    </nav>
+    <div class="runtime-note small" id="runtimeNote" hidden data-i18n="runtime.notBundled" data-i18n-title="runtime.notBundledTitle">Запущено не вшитым Python</div>
+    <button type="button" class="report-link muted small" id="reportIssue" data-act="reportIssue" data-i18n="report.btn">Сообщить о проблеме</button>
+    <div class="side-foot muted small" id="sideFoot"></div>
+  </aside>
+  <div class="content">
+    <header>
+      <button class="menu-btn" id="menuBtn" aria-label="Меню" data-i18n-aria="idx.menu"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+      <h1 id="pageTitle">Dashboard</h1>
+      <span class="muted small" id="headline"></span>
+      <button class="icon-btn" id="jobBtn" title="Терминал и процессы (Ctrl+`)" data-i18n-title="shell.terminal" aria-label="Терминал и процессы (Ctrl+`)" data-i18n-aria="shell.terminal">
+        <svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m6 9 3 3-3 3M12 15h5"/></svg>
+        <i class="job-dot" id="jobDot" hidden></i></button>
+      <div class="theme-switch" role="radiogroup" id="langSwitch" title="Язык интерфейса" data-i18n-title="lang.label" data-i18n-aria="lang.label" aria-label="Язык интерфейса"></div>
+      <div class="theme-switch" role="radiogroup" aria-label="Тема" data-i18n-aria="theme.label">
+        <button role="radio" data-theme-set="light" title="Светлая" data-i18n-title="theme.light" aria-label="Светлая" data-i18n-aria="theme.light"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg></button>
+        <button role="radio" data-theme-set="system" title="Как в системе" data-i18n-title="theme.system" aria-label="Как в системе" data-i18n-aria="theme.system"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></button>
+        <button role="radio" data-theme-set="dark" title="Тёмная" data-i18n-title="theme.dark" aria-label="Тёмная" data-i18n-aria="theme.dark"><svg viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg></button>
+      </div>
+    </header>
+    <div class="setup-banner" id="setupBanner" hidden></div>
+    <main id="view"></main>
+  </div>
+</div>
+<div class="scrim" id="scrim"></div>
+
+<dialog id="logDlg">
+  <div class="dlg-head"><h3 id="logTitle" data-i18n="idx.log">Лог</h3><button onclick="logDlg.close()" data-i18n="shell.close">Закрыть</button></div>
+  <pre id="logBody"></pre>
+</dialog>
+
+<dialog id="newAppDlg" class="wide-dlg">
+  <div class="dlg-head"><h3 data-i18n="idx.newApp">＋ Новое приложение Laravel</h3><button onclick="newAppDlg.close()" data-i18n="shell.close">Закрыть</button></div>
+  <form id="newAppForm" class="new-app"></form>
+</dialog>
+
+<aside id="job" aria-label="Терминал и процессы (Ctrl+`)" data-i18n-aria="shell.terminal">
+  <div class="dlg-head panel-head">
+    <div class="seg" id="panelTabs">
+      <button data-view="term" class="active" data-i18n="shell.tab.term">Терминал</button>
+      <button data-view="jobs"><span data-i18n="shell.tab.jobs">Процессы</span> <i class="job-dot inline" id="jobDot2" hidden></i></button>
+    </div>
+    <span class="spacer"></span>
+    <label class="muted small" title="Приложение для кнопки ↗" data-i18n-title="idx.openInHint"><span data-i18n="shell.openIn">Открыть в</span>
+      <select id="termApp" style="padding:3px 6px"><option value="terminal">Terminal</option></select></label>
+    <button id="termExt" title="Открыть папку этой сессии в приложении-терминале" data-i18n-title="shell.ext">↗</button>
+    <button id="jobClose" data-i18n="shell.close">Закрыть</button>
+  </div>
+  <section id="viewTerm" class="panel-view">
+    <div class="term-tabs" id="termTabs"></div>
+    <div id="termHost"></div>
+  </section>
+  <section id="viewJobs" class="panel-view" hidden>
+    <div id="jobList"></div>
+    <div class="job-title row" style="flex-wrap:nowrap"><span id="jobTitle" class="spacer" data-i18n="shell.noJobs">В этой сессии процессов ещё нет.</span>
+      <button id="jobStop" class="danger" hidden data-i18n="shell.stop">Стоп</button></div>
+    <pre id="jobOut"></pre>
+  </section>
+</aside>
+
+<div class="toast" id="toast"></div>
+<div class="tip" id="tip"></div>
+<script src="i18n.js"></script>
+<script src="i18n-ext-app.js"></script>
+<script src="i18n-ext-dashboard.js"></script>
+<script src="i18n-ext-packages.js"></script>
+<script src="i18n-ext-docker.js"></script>
+<script src="i18n-ext-langs.js"></script>
+<script src="i18n-ext-config.js"></script>
+<script src="i18n-ext-terminal.js"></script>
+<script src="i18n-ext-index.js"></script>
+<script src="i18n-ext-err-docker.js"></script>
+<script src="i18n-ext-err-server.js"></script>
+<script src="i18n-ext-err-lang.js"></script>
+<script src="i18n-ext-err-core.js"></script>
+<script src="i18n-ext-err-new.js"></script>
+<script src="i18n-ext-catalog.js"></script>
+<script src="i18n-ext-backups.js"></script>
+<script src="i18n-ext-vms.js"></script>
+<script src="i18n-ext-connect.js"></script>
+<script src="i18n-ext-ops.js"></script>
+<script src="i18n-ext-plans.js"></script>
+<script src="vendor/xterm.js"></script>
+<script src="vendor/addon-fit.js"></script>
+<script src="vendor/addon-web-links.js"></script>
+<script src="app.js"></script>
+<script src="terminal.js"></script>
+<script src="packages.js"></script>
+<script src="config.js"></script>
+<script src="dashboard.js"></script>
+<script src="docker.js"></script>
+<script src="icons.js"></script>
+<script src="langs.js"></script>
+<script src="profiles.js"></script>
+<script src="setup.js"></script>
+<script src="audit.js"></script>
+<script src="snapshots.js"></script>
+<script src="runs.js"></script>
+<script src="backups.js"></script>
+<script src="vms.js"></script>
+<script src="connect.js"></script>
+<script src="mobile.js"></script>
+<script src="projects.js"></script>
+<script src="agents.js"></script>
+<script>initI18n(); initRuntimes().then(initSetup).then(route);</script>
+</body>
+</html>
