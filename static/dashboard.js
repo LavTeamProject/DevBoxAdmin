@@ -20,7 +20,7 @@ function fmtDurI18n(s) {
   return h ? t("time.hm", { h, m }) : t("time.m", { m });
 }
 const uptimeFoot = (sys) =>
-  `${esc(sys.model)} · ${esc(sys.chip)}<br>macOS ${esc(sys.macos)}<br>${esc(t("shell.uptime"))} ${esc(fmtDurI18n(sys.uptime))}`;
+  `${esc(sys.model)} · ${esc(sys.chip)}<br>${esc(sys.os_label || "macOS " + sys.macos)}<br>${esc(t("shell.uptime"))} ${esc(fmtDurI18n(sys.uptime))}`;
 let lastSystem = null;   // footer sidebar digambar ulang saat bahasa berganti
 document.addEventListener("langchange", () => {
   if (lastSystem && $("sideFoot")) $("sideFoot").innerHTML = uptimeFoot(lastSystem);
@@ -200,7 +200,7 @@ tabs.dashboard = {
 
     // CPU
     lineChart($("c-cpu"), { times, series: [{ label: "CPU", color: S1, values: col("cpu") }], height: 170, area: true, fmt: pct, max: 100 });
-    $("coreNote").textContent = t("dash.coreSplit", { p: sys.cores_p, e: sys.cores_e });
+    $("coreNote").textContent = sys.cores_e ? t("dash.coreSplit", { p: sys.cores_p, e: sys.cores_e }) : "";
     $("cores").innerHTML = (last.cores || []).map((v, i) => `<div class="core"><span class="muted">${esc(t("dash.coreN", { n: i + 1 }))}</span>
       <div class="meter"><div style="width:${v}%"></div></div><span>${Math.round(v)}%</span></div>`).join("")
       || `<div class="muted small">${esc(t("dash.collecting"))}</div>`;
@@ -266,8 +266,8 @@ tabs.dashboard = {
     // Sistem
     $("sysinfo").innerHTML = [
       [t("dash.sys.name"), sys.hostname], ["Model", `${sys.model} (${sys.model_id})`], ["Chip", sys.chip],
-      ["Core", `${sys.cores_p + sys.cores_e} (${sys.cores_p}P + ${sys.cores_e}E)`],
-      ["RAM", fmtBytes(mem.total, 0)], ["macOS", `${sys.macos} (${sys.build})`],
+      ["Core", sys.cores_e ? `${sys.cores_p + sys.cores_e} (${sys.cores_p}P + ${sys.cores_e}E)` : `${sys.cores_p}`],
+      ["RAM", fmtBytes(mem.total, 0)], [sys.os_label ? "OS" : "macOS", `${sys.macos} (${sys.build})`],
       ["Uptime", fmtDurI18n(sys.uptime)], ["Load avg", sys.load.join(" · ")], [t("dash.sys.procs"), d.processes.count],
     ].map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("");
 

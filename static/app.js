@@ -167,9 +167,16 @@ async function followJob(id, onDone) {
   onDone?.();
 }
 
+// Команду с правами администратора НЕ печатаем в терминал панели (он доступен процессам того же пользователя): копируем и показываем — выполнить в своём терминале.
+window.showAdminCommand = async (cmd) => {
+  try { await navigator.clipboard.writeText(cmd); } catch { /* буфер может быть недоступен */ }
+  prompt(t("admin.runInOwnTerminal"), cmd);
+};
+
 async function runJob(promise, onDone) {
-  let id;
-  try { id = +(await promise).job; } catch (e) { return toast(e.message, true); }
+  let id, r;
+  try { r = await promise; id = +r.job; } catch (e) { return toast(e.message, true); }
+  if (r && r.terminal) return window.showAdminCommand(r.terminal);  // Linux без экрана: команду выполняет человек в СВОЁМ терминале
   jobs[id] = { id, label: "…", done: false, code: null, text: "", offset: 0 };
   jobShown = id;
   $("jobOut").dataset.job = "";

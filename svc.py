@@ -8,6 +8,7 @@ import re
 import shutil
 import signal
 import subprocess
+import sys
 import time
 from http import HTTPStatus
 
@@ -160,7 +161,38 @@ RECOMMENDED = [
 ]
 
 
+# Linux (apt): имя в Homebrew → пакет apt. Пакет без соответствия берётся по тому же имени, если он есть в индексах apt.
+APT_MAP = {"mysql": "mysql-server", "mariadb": "mariadb-server", "postgresql@17": "postgresql", "redis": "redis-server", "valkey": "valkey-server",
+           "httpd": "apache2", "rabbitmq": "rabbitmq-server", "sqlite": "sqlite3", "fd": "fd-find", "bat": "bat", "php": "php-cli",
+           "mongodb/brew/mongodb-community": None, "openjdk": "default-jdk", "go": "golang-go", "rustup": "rustup", "wget": "wget",
+           "nats-server": "nats-server", "kafka": None, "opensearch": None, "llama.cpp": None, "ngrok": None, "tlrc": None, "mise": None,
+           "fnm": None, "pyenv": None, "rbenv": "rbenv", "composer": "composer", "maven": "maven", "gradle": "gradle", "mkcert": "mkcert"}
+
+
+def _apt_pkgs():
+    return set(output(["apt-cache", "pkgnames"], timeout=30).split())
+
+
+def _apt_installed():
+    return set(output(["dpkg-query", "-W", "-f", "${Package}\\n"], timeout=30).split())
+
+
+def _apt_name(brew_name, known):
+    if brew_name in APT_MAP:
+        return APT_MAP[brew_name] if APT_MAP[brew_name] in known else None
+    base = brew_name.split("/")[-1].split("@")[0]
+    return base if base in known else None
+
+
 def recommendations(q):
+    if sys.platform != "darwin":
+        known, have = _apt_pkgs(), _apt_installed()
+        items = []
+        for n, t, c, d in RECOMMENDED:
+            a = _apt_name(n, known)
+            if a and t == "formula":
+                items.append({"name": a, "type": "formula", "category": c, "desc": d, "installed": a in have})
+        return {"items": items}
     formulae = set(output([BREW, "list", "--formula", "-1"], timeout=30).split())
     casks = set(output([BREW, "list", "--cask", "-1"], timeout=30).split())
     return {"items": [{"name": n, "type": t, "category": c, "desc": d,
@@ -173,6 +205,14 @@ def brew_versions():
 
 
 def catalog(q):
+    if sys.platform != "darwin":
+        known, have = _apt_pkgs(), _apt_installed()
+        out = []
+        for f, n, c, d in CATALOG:
+            a = _apt_name(f, known)
+            if a:
+                out.append({"formula": a, "name": n, "category": c, "desc": d, "installed": a in have})
+        return {"catalog": out}
     installed = brew_versions()
     return {"catalog": [{"formula": f, "name": n, "category": c, "desc": d,
                          "installed": f.split("/")[-1] in installed} for f, n, c, d in CATALOG]}
@@ -327,6 +367,9 @@ def config_validate(body):
 
 
 def service_install(body):
+    if sys.platform != "darwin":
+        import aptsvc
+        return aptsvc.app_action({"name": str(body.get("formula", "")), "action": "install"})
     formula = str(body.get("formula", ""))
     if not PKG_RE.match(formula):
         raise ApiError("недопустимое имя формулы", code="svc.formula_invalid")
@@ -334,6 +377,9 @@ def service_install(body):
 
 
 def service_uninstall(body, known_service):
+    if sys.platform != "darwin":
+        import aptsvc
+        return aptsvc.app_action({"name": str(body.get("name", "")), "action": "uninstall"})
     name = body.get("name", "")
     known_service(name)
     run([BREW, "services", "stop", name], timeout=120)  # hentikan dulu agar launchd bersih

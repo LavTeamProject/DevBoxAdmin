@@ -86,8 +86,8 @@ tabs.profiles = {
 
 // Nama profil: produk, bukan prosa — dipetakan di sini supaya tetap satu tempat.
 const PROFILE_NAMES = {
-  ru: { base: "Фундамент", ai: "AI", flutter: "Flutter", ios: "iOS", backend: "Backend" },
-  en: { base: "Foundation", ai: "AI", flutter: "Flutter", ios: "iOS", backend: "Backend" },
+  ru: { base: "Фундамент", ai: "AI", flutter: "Flutter", ios: "iOS", backend: "Backend", "linux-base": "Фундамент", "linux-backend": "Backend", "linux-containers": "Контейнеры", "linux-flutter": "Flutter" },
+  en: { base: "Foundation", ai: "AI", flutter: "Flutter", ios: "iOS", backend: "Backend", "linux-base": "Foundation", "linux-backend": "Backend", "linux-containers": "Containers", "linux-flutter": "Flutter" },
 };
 function profileName(p) {
   return (PROFILE_NAMES[LANG] || PROFILE_NAMES.ru)[p.id] || p.id;
@@ -107,7 +107,7 @@ handlers.profInstall = async (d) => {
   if (pl.blocked) { toast(t(`profiles.blocked.${pl.blocked}`), true); location.hash = "#setup"; return; }
   const todo = pl.items.filter((e) => e.action === "install");
   if (!todo.length) { toast(t("profiles.nothing")); return; }
-  const lines = todo.map((e) => `• ${e.name} — brew install ${e.type === "cask" ? "--cask " : ""}${e.pkg}`).join("\n");
+  const lines = todo.map((e) => `• ${e.name} — ${window.PLATFORM?.os === "linux" ? "apt install" : "brew install"} ${e.type === "cask" ? "--cask " : ""}${e.pkg}`).join("\n");
   if (!confirm(`${t("profiles.confirmHead", { n: todo.length })}\n\n${lines}\n\n${t("profiles.confirmTail")}`)) return;
   await runJob(api("/api/profiles/install", { profile: d.profile, scope, items: d.items ? [d.items] : [] }),
     () => { tabs.profiles.force = true; tabs.profiles.load(); });

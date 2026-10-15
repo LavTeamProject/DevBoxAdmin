@@ -1,7 +1,7 @@
 // Страница «Подготовка системы»: что нужно самой панели на этой машине (мастер первого запуска).
 // Установка идёт задачей (панель «Процессы»); всё записывается в журнал аудита.
 
-const SETUP_NAME = { clt: "Xcode Command Line Tools", homebrew: "Homebrew", git: "Git", python: "Python" };
+const SETUP_NAME = { clt: "Xcode Command Line Tools", homebrew: "Homebrew", git: "Git", python: "Python", toolchain: "Build tools (gcc, make, git, curl)" };
 const setupState = { data: null };
 
 async function refreshSetupBanner() {
@@ -45,11 +45,11 @@ tabs.setup = {
       } else if (!i.installed && i.blocked_by) {
         action = `<span class="badge amber">${esc(t("setup.first", { name: SETUP_NAME[i.blocked_by] }))}</span>`;
       }
-      const mode = i.id === "python" ? t(`setup.python.${i.mode}`, { v: i.version }) : (t(`setup.desc.${i.id}`));
+      const mode = i.id === "python" ? t(`setup.python.${i.packaged ? "packaged" : i.mode}`, { v: i.version }) : (i.id === "git" && i.mode === "with_toolchain" ? t("setup.desc.gitLinux") : t(`setup.desc.${i.id}`));
       return `<div class="check-row">
         ${mark}
         <span>${esc(SETUP_NAME[i.id])} ${i.version && i.id !== "python" ? `<span class="muted small">${esc(i.version)}</span>` : ""}
-          <div class="${i.id === "python" && i.mode === "system" ? "note" : "muted small"}">${esc(mode)}</div>
+          <div class="${i.id === "python" && i.mode === "system" && !i.packaged ? "note" : "muted small"}">${esc(mode)}</div>
           ${i.low_disk ? `<div class="note">${esc(t("setup.lowdisk", { free: i.free_gb }))}</div>` : ""}
           ${i.path ? `<div class="pkg mono">${esc(i.path.replace(/^\/Users\/[^/]+/, "~"))}</div>` : ""}
         </span>
@@ -61,14 +61,19 @@ tabs.setup = {
       <div class="ro-banner"><span>${esc(t("setup.intro"))}</span></div>
       <div class="card"><div class="checklist">${d.items.map(row).join("")}</div></div>
       <div class="row" style="margin-top:12px"><span class="spacer"></span>${btn(t("profiles.rescan"), "setupReload")}</div>
-      <div class="card" style="margin-top:14px"><div class="name">${esc(t("tcc.title"))}</div>
-        <p class="muted small" style="margin:6px 0 0">${esc(t("tcc.body"))}</p></div>
+      ${(window.PLATFORM?.os || "macos") === "macos" ? `<div class="card" style="margin-top:14px"><div class="name">${esc(t("tcc.title"))}</div>
+        <p class="muted small" style="margin:6px 0 0">${esc(t("tcc.body"))}</p></div>` : ""}
       ${d.ready ? `<p class="muted small">${esc(t("setup.done"))} <a href="#profiles">${esc(t("nav.profiles"))}</a></p>` : ""}`;
   },
 };
 
 handlers.setupReload = () => tabs.setup.load();
-handlers.setupInstall = (d) => runJob(api("/api/setup/install", { id: d.id }), () => tabs.setup.load());
+handlers.setupInstall = async (d) => {
+  let r;
+  try { r = await api("/api/setup/install", { id: d.id }); } catch (e) { return toast(e.message, true); }
+  if (r.terminal) return window.showAdminCommand(r.terminal);  // без экрана пароль вводится в терминале панели
+  return runJob(Promise.resolve(r), () => tabs.setup.load());
+};
 
 // Первый запуск: если чего-то не хватает и пользователь не выбрал страницу — открыть мастер.
 async function initSetup() {

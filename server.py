@@ -11,6 +11,7 @@ Hanya bind ke 127.0.0.1, tanpa dependensi eksternal (stdlib saja).
 import argparse
 import json
 import os
+import sys
 import time
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -38,6 +39,7 @@ import runner_spawn
 import runners
 import runs
 import runtimes
+import platform_info
 import report
 import setup
 import snapshots
@@ -84,6 +86,7 @@ ALLOWED_HOSTS = {"127.0.0.1", "localhost"}
 
 GET_ROUTES = {
     "/api/runtime": setup.runtime_info,
+    "/api/platform": platform_info.report,
     "/api/report": report.build,
     "/api/setup": setup.status,
     "/api/audit": audit.read,
@@ -175,6 +178,7 @@ POST_ROUTES = {
     "/api/backups/config": backups.set_config,
     "/api/backups/run": backups.start,
     "/api/vms/op": vm.run_op,
+    "/api/vms/install-deps": vm.install_deps,
     "/api/runners/install": runners.install,
     "/api/runners/spawn": runner_spawn.start_http,
     "/api/runners/selftest": runner_spawn.selftest_http,
@@ -244,6 +248,13 @@ class Handler(SimpleHTTPRequestHandler):
         super().end_headers()
 
     # keamanan dasar: hanya localhost, tolak DNS rebinding & CSRF
+    def _peer_ok(self):
+        """Linux: к API допускается только тот же пользователь (uid владельца соединения из /proc/net/tcp). На многопользовательском сервере
+        иначе любой локальный аккаунт (www-data, CI) получил бы терминал и админ-действия панели. Не удалось определить — отказ."""
+        if not sys.platform.startswith("linux"):
+            return True
+        return peer_uid(self.client_address[1], self.server.server_address[1]) == os.getuid()
+
     def _host_ok(self):
         host = (self.headers.get("Host") or "").rsplit(":", 1)[0]
         return host in ALLOWED_HOSTS
@@ -292,26 +303,48 @@ class Handler(SimpleHTTPRequestHandler):
                     pass
 
     def do_GET(self):
+        if not self._peer_ok():
+            return self._json({"error": "Доступ только для владельца панели", "code": "srv.peer_forbidden"}, HTTPStatus.FORBIDDEN)
         if not self._host_ok():
             return self._json({"error": "Хост не разрешён", "code": "srv.host_forbidden"}, HTTPStatus.FORBIDDEN)
         url = urlparse(self.path)
         if url.path in GET_ROUTES:
+            if platform_info.route_missing(url.path):
+                return self._json({"error": "Эта возможность недоступна на этой системе", "code": "platform.unsupported", "params": {}}, HTTPStatus.CONFLICT)
             q = {k: v[0] for k, v in parse_qs(url.query).items()}
             return self._dispatch(GET_ROUTES[url.path], q)
         return super().do_GET()
 
     def do_POST(self):
+        if not self._peer_ok():
+            return self._json({"error": "Доступ только для владельца панели", "code": "srv.peer_forbidden"}, HTTPStatus.FORBIDDEN)
         if not self._host_ok() or self.headers.get("X-Requested-With") != "service-admin":
             return self._json({"error": "Запрос отклонён", "code": "srv.request_rejected"}, HTTPStatus.FORBIDDEN)
         url = urlparse(self.path)
         if url.path not in POST_ROUTES:
             return self._json({"error": "not found"}, HTTPStatus.NOT_FOUND)
+        if platform_info.route_missing(url.path):
+            return self._json({"error": "Эта возможность недоступна на этой системе", "code": "platform.unsupported", "params": {}}, HTTPStatus.CONFLICT)
         try:
             length = int(self.headers.get("Content-Length") or 0)
             body = json.loads(self.rfile.read(length) or b"{}")
         except ValueError:
             return self._json({"error": "Некорректный JSON", "code": "srv.json_invalid"}, HTTPStatus.BAD_REQUEST)
         return self._dispatch(POST_ROUTES[url.path], body, audit_path=url.path)
+
+
+def peer_uid(client_port, server_port, path="/proc/net/tcp"):
+    """uid процесса-владельца клиентского сокета loopback-соединения → int или None."""
+    want_local, want_rem = f"0100007F:{client_port:04X}", f"0100007F:{server_port:04X}"
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f.readlines()[1:]:
+                p = line.split()
+                if len(p) > 7 and p[1] == want_local and p[2] == want_rem:
+                    return int(p[7])
+    except (OSError, ValueError):
+        pass
+    return None
 
 
 def main():

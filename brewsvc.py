@@ -4,9 +4,12 @@
 Только стандартная библиотека; команды — списком аргументов, без shell.
 """
 import json
+import sys
 from http import HTTPStatus
 
+import aptsvc
 import operations
+import systemdsvc
 from core import BREW, PKG_RE, ApiError, loads_or, pid_tree_stats, run, tail
 
 
@@ -14,6 +17,8 @@ SERVICE_ACTIONS = {"start", "stop", "restart", "run", "kill"}
 
 
 def list_services():
+    if sys.platform != "darwin":  # Linux: systemd / apt (Фаза 6, Л3)
+        return systemdsvc.list_services()
     code, out, err = run([BREW, "services", "info", "--all", "--json"])
     if code != 0:
         raise ApiError(err.strip() or "Ошибка brew services", HTTPStatus.INTERNAL_SERVER_ERROR, code=None if err.strip() else "srv.brew_services_failed")
@@ -31,6 +36,8 @@ def process_stats(pids):
 
 
 def known_service(name):
+    if sys.platform != "darwin":  # Linux: systemd / apt (Фаза 6, Л3)
+        return systemdsvc.known_service(name)
     svc = next((s for s in list_services() if s["name"] == name), None)
     if not svc:
         raise ApiError("Неизвестный сервис", HTTPStatus.NOT_FOUND, code="srv.service_unknown")
@@ -38,6 +45,8 @@ def known_service(name):
 
 
 def service_action(body):
+    if sys.platform != "darwin":  # Linux: systemd / apt (Фаза 6, Л3)
+        return systemdsvc.service_action(body)
     name, action = body.get("name", ""), body.get("action", "")
     if action not in SERVICE_ACTIONS:
         raise ApiError("Недопустимое действие", code="srv.action_invalid")
@@ -49,6 +58,8 @@ def service_action(body):
 
 
 def service_logs(q):
+    if sys.platform != "darwin":  # Linux: systemd / apt (Фаза 6, Л3)
+        return systemdsvc.service_logs(q)
     svc = known_service(q.get("name", ""))
     same = svc.get("error_log_path") == svc.get("log_path")
     return {"log": tail(svc.get("log_path")),
@@ -57,6 +68,8 @@ def service_logs(q):
 
 
 def list_apps():
+    if sys.platform != "darwin":  # Linux: systemd / apt (Фаза 6, Л3)
+        return aptsvc.list_apps()
     code, out, err = run([BREW, "info", "--json=v2", "--installed"], timeout=120)
     if code != 0:
         raise ApiError(err.strip() or "Ошибка brew info", HTTPStatus.INTERNAL_SERVER_ERROR, code=None if err.strip() else "srv.brew_info_failed")
@@ -79,6 +92,8 @@ def list_apps():
 
 
 def search_apps(q):
+    if sys.platform != "darwin":  # Linux: systemd / apt (Фаза 6, Л3)
+        return aptsvc.search_apps(q)
     term = q.get("q", "").strip()
     if not PKG_RE.match(term):
         raise ApiError("Недопустимый поисковый запрос", code="srv.query_invalid")
@@ -93,6 +108,8 @@ def search_apps(q):
 
 
 def app_action(body):
+    if sys.platform != "darwin":  # Linux: systemd / apt (Фаза 6, Л3)
+        return aptsvc.app_action(body)
     name, kind, action = body.get("name", ""), body.get("type"), body.get("action")
     if action == "upgrade-all":
         return operations.run_upgrade_all()

@@ -25,6 +25,11 @@ function applyNav(d) {
 const langHref = (key) => (key === "php" || key === "node" ? `#${key}` : `#lang-${key}`);
 
 async function initRuntimes() {
+  // возможности платформы (Фаза 6, Л0): страницы без возможностей скрываются; сбой запроса — ничего не скрываем
+  try {
+    window.PLATFORM = await api("/api/platform");
+    document.querySelectorAll("[data-cap]").forEach((a) => { a.hidden = !window.PLATFORM.capabilities[a.dataset.cap]; });
+  } catch { /* показываем всё */ }
   // logo untuk item statis (Docker, Herd)
   document.querySelectorAll("[data-nav]").forEach((a) => {
     const logo = logoSvg(a.dataset.nav);
@@ -36,7 +41,7 @@ async function initRuntimes() {
   // panel wajib tetap jalan di interpreter lain, tapi harus jujur menunjukkannya
   api("/api/runtime").then((r) => {
     const note = $("runtimeNote");
-    note.hidden = r.bundled;
+    note.hidden = r.bundled || r.packaged;
     note.dataset.py = `${r.python} (${r.version})`;
   }).catch(() => { /* indikator saja, bukan fitur kritis */ });
   let d = { langs: [], available: [] };

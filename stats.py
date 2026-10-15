@@ -47,11 +47,13 @@ def sysctl(name):
 
 # ---------------------------------------------------------------- CPU (Mach)
 
-_libc = ctypes.CDLL("/usr/lib/libSystem.dylib")
-_libc.mach_host_self.restype = c_uint
-_libc.host_processor_info.argtypes = [c_uint, c_int32, POINTER(c_uint), POINTER(POINTER(c_int32)), POINTER(c_uint)]
-_libc.vm_deallocate.argtypes = [c_uint, ctypes.c_size_t, ctypes.c_size_t]
-_task_self = c_uint.in_dll(_libc, "mach_task_self_")
+IS_LINUX = platform.system() == "Linux"
+if not IS_LINUX:  # Mach/IOKit — только macOS; на Linux функции подменяются из stats_linux ниже
+    _libc = ctypes.CDLL("/usr/lib/libSystem.dylib")
+    _libc.mach_host_self.restype = c_uint
+    _libc.host_processor_info.argtypes = [c_uint, c_int32, POINTER(c_uint), POINTER(POINTER(c_int32)), POINTER(c_uint)]
+    _libc.vm_deallocate.argtypes = [c_uint, ctypes.c_size_t, ctypes.c_size_t]
+    _task_self = c_uint.in_dll(_libc, "mach_task_self_")
 
 
 def cpu_ticks():
@@ -293,6 +295,7 @@ def system_info():
             "macos": sh("sw_vers", "-productVersion").strip(),
             "build": sh("sw_vers", "-buildVersion").strip(),
         }
+        _static["os_label"] = "macOS " + _static["macos"]
     boot = int(re.search(r"sec = (\d+)", sysctl("kern.boottime"))[1])
     return {**_static, "uptime": int(time.time() - boot), "load": [round(x, 2) for x in os.getloadavg()]}
 
@@ -353,5 +356,9 @@ class Sampler:
             "battery": battery(), "disk": disk_usage(), "processes": top_processes(),
         }
 
+
+if IS_LINUX:  # Фаза 6, Л1: те же имена, реализация из /proc и /sys
+    from stats_linux import (TempSensors, battery, cpu_ticks, disk_io_bytes, disk_usage, gpu, memory, net_bytes,  # noqa: E402,F401
+                             summarize_temps, system_info, top_processes)
 
 SAMPLER = Sampler()

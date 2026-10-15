@@ -30,7 +30,30 @@ def parse_params(items):
     return out
 
 
+def approve_cmd(args):
+    """`service-admin approve [id]` — человек одобряет запрос панели (Linux, канал B): pkexec + корневой помощник. Пароль вводится здесь, в терминале."""
+    import approval
+    import os
+    via_sudo = "--sudo" in args
+    args = [a for a in args if a != "--sudo"]
+    pend = approval.pending_requests()
+    plan_pend = [x for x in pend if not x.startswith("direct-")]  # прямые вызовы панели автоматически не выбираем: id указывается явно
+    rid = args[0] if args else (plan_pend[0] if len(plan_pend) == 1 and len(pend) == 1 else None)
+    if not rid:
+        print("Нет ожидающих запросов." if not pend else "Ожидают несколько запросов, укажите id: " + ", ".join(pend), file=sys.stderr)
+        return 1
+    if not os.path.exists(approval.HELPER):
+        print(f"Помощник не установлен: sudo ./install-approver.sh <пользователь> ({approval.HELPER})", file=sys.stderr)
+        return 2
+    if via_sudo or not os.path.exists("/usr/bin/pkexec"):  # запасной путь, если polkit-агент недоступен
+        os.execv("/usr/bin/sudo", ["sudo", approval.HELPER, rid])
+    os.execv("/usr/bin/pkexec", ["pkexec", approval.HELPER, rid])
+
+
 def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    if argv and argv[0] == "approve":
+        return approve_cmd(argv[1:])
     ap = argparse.ArgumentParser(prog="service-admin", description=__doc__.split("\n")[0])
     ap.add_argument("--agent", required=True, help="id агента со страницы «Подключение агентов»")
     sub = ap.add_subparsers(dest="cmd", required=True)

@@ -5,7 +5,9 @@
 import hashlib
 import json
 import os
+import platform
 import re
+import sys
 import urllib.request
 
 import core
@@ -13,10 +15,23 @@ import vm
 from core import DATA_DIR
 
 NODE_DIR = "/usr/local/lib/nodejs"
-RECIPES = {
+RECIPES_MAC = {
     "node": {"title": "Node.js LTS (official tarball, sha256-checked on the host)", "internet": "host"},
     "clt": {"title": "Command Line Tools (git, compilers) via softwareupdate", "internet": "guest"},
 }
+RECIPES_LINUX = {
+    "node": {"title": "Node.js LTS (official tarball, sha256-checked on the host)", "internet": "host"},
+    "build": {"title": "Build tools (build-essential, git, curl) via apt", "internet": "guest"},
+}
+RECIPES = RECIPES_MAC if sys.platform == "darwin" else RECIPES_LINUX
+INTERNET_RECIPES = {"build"}   # доверенные пакеты apt: гость QEMU получает выход в интернет (и видит loopback хоста!) только здесь
+
+
+def _node_plat():
+    """Платформа гостя (= хоста) в имени архива Node.js."""
+    if sys.platform == "darwin":
+        return "darwin-arm64"
+    return "linux-arm64" if platform.machine().lower() in ("aarch64", "arm64") else "linux-x64"
 _VER = re.compile(r"^v\d{1,3}\.\d{1,3}\.\d{1,3}$")
 _UA = {"User-Agent": "service-admin"}
 
@@ -40,7 +55,7 @@ def _node_tarball(log):
     ver = next((x["version"] for x in idx if x.get("lts")), None)
     if not ver or not _VER.match(ver):
         raise RuntimeError("cannot determine the Node.js LTS version")
-    name = f"node-{ver}-darwin-arm64.tar.xz"
+    name = f"node-{ver}-{_node_plat()}.tar.xz"
     cache = os.path.join(DATA_DIR, "downloads")
     os.makedirs(cache, mode=0o700, exist_ok=True)
     path = os.path.join(cache, name)
@@ -78,7 +93,7 @@ def _node_tarball(log):
 
 def _node(ip, log):
     path, ver, name = _node_tarball(log)
-    code, out = vm._guest(ip, f"sudo -n mkdir -p {NODE_DIR} && sudo -n rm -rf {NODE_DIR}/node-{ver}-darwin-arm64", timeout=60)
+    code, out = vm._guest(ip, f"sudo -n mkdir -p {NODE_DIR} && sudo -n rm -rf {NODE_DIR}/node-{ver}-{_node_plat()}", timeout=60)
     if code:
         raise RuntimeError("cannot prepare the guest folder: " + out[:200])
     log("copying into the VM…")
@@ -86,7 +101,7 @@ def _node(ip, log):
         code, out = vm._guest(ip, f"sudo -n tar -xJf - -C {NODE_DIR}", stdin=f, timeout=900)
     if code:
         raise RuntimeError("unpack failed: " + out[:200])
-    link = f"for b in node npm npx; do sudo -n ln -sf {NODE_DIR}/node-{ver}-darwin-arm64/bin/$b /usr/local/bin/$b; done"
+    link = f"for b in node npm npx; do sudo -n ln -sf {NODE_DIR}/node-{ver}-{_node_plat()}/bin/$b /usr/local/bin/$b; done"
     code, out = vm._guest(ip, f"sudo -n mkdir -p /usr/local/bin && {link} && /usr/local/bin/node --version", timeout=60)
     if code or out.strip().splitlines()[-1:] != [ver]:
         raise RuntimeError("verification failed: " + out[:200])
@@ -117,10 +132,18 @@ def _clt(ip, log):
     log(out[-300:])
 
 
+def _build(ip, log):
+    code, out = vm._guest(ip, "sudo -n env DEBIAN_FRONTEND=noninteractive sh -c 'apt-get update -qq && apt-get install -y -qq build-essential git curl' 2>&1 | tail -3; "
+                              "gcc --version | head -1; git --version", timeout=3600)
+    if "gcc" not in out or "git version" not in out:
+        raise RuntimeError("installation failed: " + out[-300:])
+    log(out[-200:])
+
+
 def step(exe, name, recipe):
     """Шаг для start_steps: старт ВМ → ждём SSH → рецепт → остановка (всегда)."""
     import time
-    fn = {"node": _node, "clt": _clt}[recipe]
+    fn = {"node": _node, "clt": _clt, "build": _build}[recipe]
 
     def run(log):
         d = vm.driver()
@@ -128,18 +151,8 @@ def step(exe, name, recipe):
             raise RuntimeError("the VM is running now; stop it first (it was not started by this job)")
         ip = None
         try:
-            vm._start_detached(exe, name)(log)
-            deadline = time.monotonic() + 120
-            while time.monotonic() < deadline:
-                try:
-                    ip = ip or d.ip(name)
-                    if vm._guest(ip, "true", timeout=15)[0] == 0:
-                        break
-                except Exception:  # noqa: BLE001 - ip ещё нет / ssh не отвечает
-                    pass
-                time.sleep(2)
-            else:
-                raise RuntimeError("the VM did not accept SSH in 2 minutes")
+            vm._start_detached(exe, name, {"internet": True} if recipe in INTERNET_RECIPES and d.name == "qemu" else ())(log)
+            ip = vm.wait_ssh(d, name)
             fn(ip, log)
         finally:
             log("stopping the VM…")

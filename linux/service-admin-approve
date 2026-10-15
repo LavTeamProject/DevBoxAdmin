@@ -1,0 +1,164 @@
+#!/usr/bin/python3 -I
+"""service-admin-approve — корневой помощник подтверждения действий агента на Linux (ADR-0001, канал B).
+
+Запускается ТОЛЬКО через pkexec (polkit-действие local.service-admin.approve, auth_admin: пароль человека при каждом вызове):
+    pkexec /usr/local/libexec/service-admin-approve <request-id>
+или (запасной путь, если polkit-агент недоступен) через sudo с `timestamp_timeout=0` для этой команды (install-approver.sh ставит sudoers-файл):
+    sudo /usr/local/libexec/service-admin-approve <request-id>
+Читает запрос панели из ~/.service-admin/approvals/<id>.req.json пользователя PKEXEC_UID, показывает ЕГО же текст, спрашивает y/N на терминале
+и пишет решение в /var/lib/service-admin/approvals/<uid>/ (владелец root, 0755). Панель принимает только такие файлы.
+Требования ADR: запрос открывается один раз (O_NOFOLLOW|O_NONBLOCK), проверяется fstat (обычный файл, владелец = PKEXEC_UID, ≤ 64 КБ),
+показывается и хешируется один и тот же буфер; id проверяется по ^[A-Za-z0-9-]{1,64}$; запись атомарная (O_EXCL + rename).
+Только стандартная библиотека; запускается интерпретатором в изолированном режиме (-I)."""
+import hashlib
+import json
+import os
+import pwd
+import re
+import secrets
+import select
+import stat
+import sys
+import termios
+import time
+import unicodedata
+
+DEC_ROOT = "/var/lib/service-admin/approvals"
+ID_RE = re.compile(r"^[A-Za-z0-9-]{1,64}$")
+NONCE_RE = re.compile(r"^[0-9a-f]{32}$")
+MAX_REQ = 65536
+PROMPT_SECONDS = 150
+KEEP_SECONDS = 24 * 3600
+
+
+def sanitize(text, limit=4000):
+    """Убирает управляющие символы и escape-последовательности: текст запроса задаёт агент, он не должен подделывать экран."""
+    text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", str(text))
+    text = "".join(ch if (ch == "\n" or ch >= " " and ch != "\x7f" and not 0x80 <= ord(ch) < 0xa0) and unicodedata.category(ch) not in ("Cf", "Zl", "Zp")
+                   else "?" for ch in text)  # без bidi/невидимых символов, которыми можно подменить смысл строки
+    return text[:limit]
+
+
+def load_request(uid, rid, now=None):
+    """→ dict запроса или SystemExit с понятной причиной."""
+    if not ID_RE.match(rid):
+        raise SystemExit("недопустимый id запроса")
+    home = pwd.getpwuid(uid).pw_dir
+    base = os.path.realpath(os.path.join(home, ".service-admin", "approvals"))
+    path = os.path.realpath(os.path.join(base, rid + ".req.json"))
+    if os.path.dirname(path) != base:
+        raise SystemExit("запрос вне каталога подтверждений")
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError:
+        raise SystemExit("запрос не найден (возможно, истёк)") from None
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode) or st.st_uid != uid or st.st_size > MAX_REQ:
+            raise SystemExit("запрос не прошёл проверку владельца/типа/размера")
+        raw = os.read(fd, MAX_REQ + 1)
+    finally:
+        os.close(fd)
+    try:
+        req = json.loads(raw.decode("utf-8"))
+    except ValueError:
+        raise SystemExit("запрос повреждён") from None
+    if not isinstance(req, dict) or req.get("id") != rid or req.get("uid") != uid or not NONCE_RE.match(str(req.get("nonce", ""))):
+        raise SystemExit("запрос не соответствует пользователю/номеру")
+    if float(req.get("expires", 0)) < (now or time.time()):
+        raise SystemExit("срок запроса истёк")
+    return {"id": rid, "nonce": req["nonce"], "uid": uid, "expires": float(req["expires"]), "text": str(req.get("text", "")),
+            "digest": hashlib.sha256(raw).hexdigest(), "lang": req.get("lang", "ru")}
+
+
+def write_decision(uid, req, decision, dec_root=None):
+    root = dec_root or DEC_ROOT
+    d = os.path.join(root, str(uid))
+    st = os.lstat(d) if os.path.isdir(d) else None
+    if st is None or st.st_uid != 0 or stat.S_ISLNK(st.st_mode) or st.st_mode & 0o022:
+        raise SystemExit("каталог решений не настроен (запустите install-approver.sh от root)")
+    name = f"{req['id']}.{req['nonce']}.dec.json"
+    tmp = os.path.join(d, f".{name}.{os.getpid()}.tmp")
+    body = json.dumps({"id": req["id"], "nonce": req["nonce"], "digest": req["digest"], "decision": decision, "uid": uid,
+                       "at": time.time(), "expires": req["expires"]})
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+    with os.fdopen(fd, "w") as f:
+        f.write(body)
+    os.rename(tmp, os.path.join(d, name))
+    for fn in os.listdir(d):  # уборка старых решений
+        p = os.path.join(d, fn)
+        try:
+            if time.time() - os.lstat(p).st_mtime > KEEP_SECONDS:
+                os.unlink(p)
+        except OSError:
+            pass
+    return os.path.join(d, name)
+
+
+def ask(text, header=""):
+    """Одобрение = ввод случайного кода, показанного только на экране человека (агент того же пользователя может писать в этот tty и
+    подсунуть «y» через TIOCSTI, но кода не знает). Очередь ввода сбрасывается перед запросом. Нет ответа за PROMPT_SECONDS — отказ."""
+    code = secrets.token_hex(2)
+    try:
+        termios.tcflush(0, termios.TCIFLUSH)
+    except termios.error:
+        pass
+    sys.stdout.write("\n" + "=" * 70 + "\n" + header + sanitize(text) + "\n" + "=" * 70
+                     + f"\nЧтобы ОДОБРИТЬ, введите код {code} и Enter; всё остальное — отказ.\nTo APPROVE, type {code} and Enter; anything else rejects: ")
+    sys.stdout.flush()
+    r, _, _ = select.select([sys.stdin], [], [], PROMPT_SECONDS)
+    if not r:
+        return "reject"
+    return "approve" if sys.stdin.readline().strip() == code else "reject"
+
+
+def in_panel_terminal(read=None):
+    """True, если среди предков процесса — сервер панели (мы запущены во вкладке «Терминал» панели). Тот PTY доступен агенту того же пользователя:
+    он мог бы прочитать код с «экрана» и ввести его, пока человек вводит пароль."""
+    def cmdline(pid):
+        try:
+            with open(f"/proc/{pid}/cmdline", "rb") as f:
+                return [a.decode("utf-8", "replace") for a in f.read().split(b"\0") if a]
+        except OSError:
+            return []
+
+    def ppid(pid):
+        try:
+            with open(f"/proc/{pid}/stat", encoding="utf-8") as f:
+                return int(f.read().rsplit(")", 1)[1].split()[1])
+        except (OSError, ValueError, IndexError):
+            return 0
+    c = read or cmdline
+    pid, seen = os.getppid(), 0
+    while pid > 1 and seen < 64:
+        if any(os.path.basename(a) == "server.py" for a in c(pid)[:4]):
+            return True
+        pid, seen = (ppid(pid) if read is None else 0), seen + 1
+    return False
+
+
+def main(argv):
+    if os.geteuid() != 0:
+        raise SystemExit("запускается только через pkexec")
+    if os.environ.get("PKEXEC_UID") and os.environ.get("SUDO_UID"):
+        raise SystemExit("заданы и PKEXEC_UID, и SUDO_UID — отказ (неоднозначный вызывающий)")
+    try:  # pkexec задаёт PKEXEC_UID, sudo — SUDO_UID; оба выставляются самой программой повышения прав, не пользователем
+        uid = int(os.environ.get("PKEXEC_UID") or os.environ.get("SUDO_UID") or "")
+    except ValueError:
+        raise SystemExit("запускается только через pkexec или sudo (нет PKEXEC_UID/SUDO_UID)") from None
+    if uid == 0 or len(argv) != 2:
+        raise SystemExit("использование: pkexec|sudo service-admin-approve <id запроса>")
+    if not os.isatty(0):
+        raise SystemExit("нужен терминал: пароль и ответ вводит человек")
+    if in_panel_terminal():
+        raise SystemExit("Не подтверждайте во вкладке «Терминал» панели (она доступна агенту): откройте СВОЙ терминал, например по SSH.")
+    req = load_request(uid, argv[1])
+    kind = "ПРЯМОЙ ВЫЗОВ ПАНЕЛИ / DIRECT PANEL ACTION" if req["id"].startswith("direct-") else "ПЛАН АГЕНТА / AGENT PLAN"
+    decision = ask(req["text"], f"[{kind}]  id: {req['id']}\n\n")
+    path = write_decision(uid, req, decision)
+    print("Решение записано:" if decision == "approve" else "Отказ записан:", path)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

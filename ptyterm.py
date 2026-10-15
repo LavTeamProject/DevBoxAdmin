@@ -12,6 +12,7 @@ import signal
 import struct
 import termios
 import threading
+import sys
 import time
 import warnings
 from http import HTTPStatus
@@ -59,6 +60,16 @@ def _reader(s):
         pass
 
 
+def _shell():
+    """macOS — zsh (как раньше). Linux — оболочка пользователя ($SHELL: bash/zsh/fish/sh), иначе /bin/bash."""
+    if sys.platform == "darwin":
+        return "zsh"
+    cand = ENV.get("SHELL") or ""
+    if cand and os.path.basename(cand) in ("bash", "zsh", "fish", "sh") and os.access(cand, os.X_OK):
+        return cand
+    return "/bin/bash"
+
+
 def new_session(body):
     cwd = os.path.realpath(os.path.expanduser(str(body.get("cwd") or "~")))
     if not os.path.isdir(cwd):
@@ -67,20 +78,21 @@ def new_session(body):
     rows = max(5, min(int(body.get("rows") or 30), 200))
     command = str(body.get("command") or "").strip()
     env = {k: v for k, v in ENV.items() if k not in ("NO_COLOR", "CLICOLOR", "PAGER", "GIT_PAGER")}
-    env.update(TERM="xterm-256color", COLORTERM="truecolor", TERM_PROGRAM="ServiceAdmin", LANG=env.get("LANG", "en_US.UTF-8"))
+    env.update(TERM="xterm-256color", COLORTERM="truecolor", TERM_PROGRAM="ServiceAdmin", LANG=env.get("LANG", "en_US.UTF-8" if sys.platform == "darwin" else "C.UTF-8"))
     # login shell interaktif: memuat .zprofile + .zshrc (PATH, alias, nvm, Herd, ...)
-    argv = ["zsh", "-l", "-i"] + (["-c", f"{command}; exec zsh -l -i"] if command else [])
+    shell = _shell()
+    argv = [shell, "-l", "-i"] + (["-c", f"{command}; exec {shell} -l -i"] if command else [])
     pid, fd = pty.fork()
     if pid == 0:  # proses anak
         try:
             os.chdir(cwd)
-            os.execvpe("zsh", argv, env)
+            os.execvpe(shell, argv, env)
         finally:
             os._exit(127)
     _set_size(fd, cols, rows)
     sid = str(next(IDS))
     s = {"id": sid, "pid": pid, "fd": fd, "buf": bytearray(), "base": 0, "alive": True, "code": None,
-         "cond": threading.Condition(), "cwd": cwd, "title": command.split()[0] if command else "zsh",
+         "cond": threading.Condition(), "cwd": cwd, "title": command.split()[0] if command else os.path.basename(shell),
          "started": time.time(), "cols": cols, "rows": rows, "last": time.time()}
     with LOCK:
         SESSIONS[sid] = s

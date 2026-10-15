@@ -18,6 +18,7 @@ import shlex
 import socket
 import signal
 import subprocess
+import sys
 import threading
 import time
 from http import HTTPStatus
@@ -61,16 +62,16 @@ def guest_command(provider_id, source, name, labels):
 
 def _stream_guest(ip, command, secret, log, minutes, scrubbed=None):
     """ssh: токен уходит в файл гостя через stdin; затем основная команда, вывод построчно (с вырезанным токеном); по дедлайну процесс убивается."""
-    env = dict(core.ENV, SSHPASS="admin")
+    prefix, env = vm.ssh_cmd(ip)
     for attempt in range(3):  # сразу после загрузки гостя ssh иногда рвёт первое соединение — повторяем
-        w = subprocess.run([vm._sshpass(), "-e", "ssh", *vm.SSH_OPTS, f"{vm.GUEST_USER}@{ip}", f"umask 077; cat > ~/{TOKEN_FILE}"],
+        w = subprocess.run([*prefix, f"umask 077; cat > ~/{TOKEN_FILE}"],
                            input=(secret + "\n").encode(), capture_output=True, env=env, timeout=30)
         if w.returncode == 0:
             break
         time.sleep(3)
     else:
         raise RuntimeError("cannot hand the token to the VM")
-    p = subprocess.Popen([vm._sshpass(), "-e", "ssh", *vm.SSH_OPTS, f"{vm.GUEST_USER}@{ip}", "sh", "-c", shlex.quote(command)],
+    p = subprocess.Popen([*prefix, "sh", "-c", shlex.quote(command)],
                          stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env, text=True, bufsize=1,
                          start_new_session=True)
     timed_out = threading.Event()
@@ -117,7 +118,8 @@ def net_args(source, isolate):
 
 def _preflight(ip, source):
     """Гость должен достучаться до сервера CI — иначе ждать задание бессмысленно (DNS в госте, сеть, изоляция)."""
-    code, out = vm._guest(ip, f"curl -s -m 12 -o /dev/null -w '%{{http_code}}' {shlex.quote(source['url'] + '/')}", timeout=30)
+    slow = max(30, vm.driver().ssh_probe_timeout)  # без KVM рукопожатие SSH и curl в госте медленные
+    code, out = vm._guest(ip, f"curl -s -m {slow} -o /dev/null -w '%{{http_code}}' {shlex.quote(source['url'] + '/')}", timeout=slow + 30)
     if code != 0 or out.strip() in ("", "000"):
         raise RuntimeError(f"the guest cannot reach the CI server {source['url']} (DNS or network); with network isolation the "
                            "server must be reachable at an address that the host resolves — check the address or isolate=false")
@@ -142,33 +144,36 @@ def _spawn(base, source, labels, minutes, isolate):
                 raise RuntimeError("cannot get a registration token: " + e.message) from None
         scrubbed = [x for x in (stored, secret) if x]
         clone = "ci-" + secrets.token_hex(4)
-        extra = net_args(source, isolate)
-        log("network isolation (softnet): ON — the guest can reach the internet and the CI server only" if extra
+        extra = d.isolation(source) if isolate else []
+        log(("network isolation (QEMU restrict): ON — the guest can reach the CI server only (no internet, no local network)" if d.name == "qemu"
+             else "network isolation (softnet): ON — the guest can reach the internet and the CI server only") if extra
             else "WARNING: network isolation is OFF — the guest can reach your local network")
         log(f"cloning {base} → {clone}")
         try:
-            cl = subprocess.run([exe, "clone", base, clone], capture_output=True, timeout=300)
-            if cl.returncode:
-                raise RuntimeError("tart clone failed: " + cl.stderr.decode("utf-8", "replace").strip()[:200])
+            d.clone(base, clone)
             if d.status(base)["running"]:  # основу включили во время копирования — копия могла получиться неконсистентной
                 raise RuntimeError("the base VM was started during cloning; try again")
-            vm._start_detached(exe, clone, extra)(log)
-            deadline = time.monotonic() + 120
-            ip = None
-            while time.monotonic() < deadline:
-                try:
-                    ip = ip or d.ip(clone)
-                    if vm._guest(ip, "true", timeout=15)[0] == 0:
-                        break
-                except Exception:  # noqa: BLE001
-                    pass
-                time.sleep(2)
-            else:
-                raise RuntimeError("the VM did not accept SSH in 2 minutes")
-            _preflight(ip, source)
+            d.start_step(clone, extra)(log)
+            ip = vm.wait_ssh(d, clone)
+            fwd = (extra or {}).get("fwd") if isinstance(extra, dict) else None
+            gsource = source                                    # источник, каким его видит ГОСТЬ
+            if fwd:  # QEMU: сервер CI доступен гостю только по 10.0.2.100
+                import ipaddress
+                import vm_qemu
+                try:  # адрес-литерал (в т.ч. 127.0.0.1) в госте означал бы сам гость — подменяем на 10.0.2.100
+                    ipaddress.ip_address(fwd["host"])
+                    gsource = dict(source, url=source["url"].replace(fwd["host"], vm_qemu.FWD_IP, 1))
+                except ValueError:  # имя — прописываем в /etc/hosts гостя, TLS и Host остаются корректными
+                    if not re.fullmatch(r"[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?", fwd["host"]):
+                        raise RuntimeError("the CI server host name has unexpected characters")
+                    code, out = vm._guest(ip, "echo " + shlex.quote(f"{vm_qemu.FWD_IP} {fwd['host']}") + " | sudo -n tee -a /etc/hosts >/dev/null",
+                                          timeout=max(30, d.ssh_probe_timeout))
+                    if code:
+                        raise RuntimeError("cannot add the CI server name to the guest's /etc/hosts: " + out[:200])
+            _preflight(ip, gsource)
             log("the guest can reach the CI server")
             log(f"registering ephemeral runner '{clone}' on {source['url']} and waiting for one job (up to {minutes} min)…")
-            _stream_guest(ip, guest_command(source["provider"], source, clone, labels), secret, log, minutes, scrubbed)
+            _stream_guest(ip, guest_command(source["provider"], gsource, clone, labels), secret, log, minutes, scrubbed)
             log("job finished")
         finally:
             log(f"deleting {clone}…")
@@ -178,8 +183,10 @@ def _spawn(base, source, labels, minutes, isolate):
                 exists = True
             if exists:  # клон мог не создаться совсем, а мог остаться недокопированным
                 vm._stop_vm(exe, clone, log)  # клон удаляется — штатное выключение не нужно
-                r = subprocess.run([exe, "delete", clone], capture_output=True, timeout=60)
-                log("VM deleted" if r.returncode == 0 else f"WARNING: could not delete {clone}; remove it by hand")
+                try:
+                    log("VM deleted" if d.delete(clone) else f"WARNING: could not delete {clone}; remove it by hand")
+                except Exception as e:  # noqa: BLE001 - ошибка удаления не должна скрыть исходную ошибку и пропустить уборку на сервере CI
+                    log(f"WARNING: could not delete {clone} ({e}); remove it by hand")
             else:
                 log("no clone to delete")
             if api:  # брошенный раннер (задание не пришло) не должен висеть «офлайн» на сервере CI
@@ -197,7 +204,7 @@ def _validate(body):
     """POST /api/runners/spawn {source, vm, labels?, minutes?, confirm} → {"job": id}."""
     d = vm.driver()
     if not d.available() or not vm._sshpass():
-        raise ApiError("tart and sshpass are required", HTTPStatus.CONFLICT, code="vm.no_sshpass")
+        raise ApiError("A VM driver (tart or QEMU) and sshpass are required", HTTPStatus.CONFLICT, code="vm.no_sshpass")
     src = next((s for s in runners._load()["sources"] if s["id"] == body.get("source")), None)  # noqa: SLF001
     if not src:
         raise ApiError("Source not found", HTTPStatus.NOT_FOUND, code="runner.source_missing")
@@ -211,7 +218,7 @@ def _validate(body):
         raise ApiError("Stop the VM first", HTTPStatus.CONFLICT, code="vm.running")
     if base.startswith("ci-"):
         raise ApiError("Use a base VM, not a disposable ci-* clone", code="runner.bad_base")
-    labels = body.get("labels") or ([] if src["provider"] == "github" else ["macos:host"])
+    labels = body.get("labels") or ([] if src["provider"] == "github" else [HOST_LABEL + ":host"])
     if (not isinstance(labels, list) or len(labels) > MAX_LABELS or not all(isinstance(x, str) and LABEL_RE.match(x) for x in labels)
             or (src["provider"] == "gitea" and not labels)):
         raise ApiError("Labels: up to 5 items like macos:host", code="runner.bad_labels")
@@ -223,7 +230,9 @@ def _validate(body):
     isolate = body.get("isolate", "auto")
     if isolate not in (True, False, "auto"):
         raise ApiError("isolate must be true, false or auto", code="runner.bad_isolate")
-    ready = vm.softnet_ready()
+    if d.name == "qemu" and isolate is False:  # без restrict гость видит loopback хоста и API панели — на Linux чужой код так не запускается
+        raise ApiError("On Linux runners always run isolated", HTTPStatus.CONFLICT, code="runner.isolate_required")
+    ready = True if d.name == "qemu" else vm.softnet_ready()  # QEMU изолирует сеть сам, без root
     if isolate is True and not ready:
         raise ApiError("Network isolation needs softnet with root rights", HTTPStatus.CONFLICT, code="runner.no_softnet")
     isolate = ready if isolate == "auto" else isolate
@@ -239,9 +248,10 @@ def start(body):
 
 # ---------------------------------------------------------------- самотест: всё через панель
 
+HOST_LABEL = "macos" if sys.platform == "darwin" else "linux"
 WORKFLOWS = {
-    "gitea": (".gitea/workflows/selftest.yaml", "macos"),
-    "github": (".github/workflows/selftest.yml", "[self-hosted, macOS]"),
+    "gitea": (".gitea/workflows/selftest.yaml", HOST_LABEL),
+    "github": (".github/workflows/selftest.yml", "[self-hosted, macOS]" if sys.platform == "darwin" else "[self-hosted, Linux]"),
 }
 
 
@@ -274,7 +284,7 @@ def _selftest(base, source, minutes, isolate):
             path, text = _workflow(source["provider"])
             sha = api.put_file(full, path, text, "selftest workflow", branch)
             log(f"pushed {path} to {full} (commit {sha[:8]}): a workflow run is queued")
-            _spawn(base, source, [] if source["provider"] == "github" else ["macos:host"], minutes, isolate)(log)
+            _spawn(base, source, [] if source["provider"] == "github" else [HOST_LABEL + ":host"], minutes, isolate)(log)
             end = time.monotonic() + 120
             run = None
             while time.monotonic() < end:  # ищем запуск именно для НАШЕГО коммита

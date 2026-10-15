@@ -239,10 +239,18 @@ def _gb(n):
 def t_inspect_system(p, agent=None):
     import setup
     from core import run
+    import platform_info
     disk = shutil.disk_usage("/")
-    mem = run(["/usr/sbin/sysctl", "-n", "hw.memsize"], timeout=5)[1].strip()
+    if platform_info.is_macos():
+        mem = run(["/usr/sbin/sysctl", "-n", "hw.memsize"], timeout=5)[1].strip()
+        osinfo = {"macos": run(["/usr/bin/sw_vers", "-productVersion"], timeout=5)[1].strip()}
+    else:  # Linux: данные из /proc и os-release
+        with open("/proc/meminfo", encoding="utf-8") as f:
+            kb = next((ln.split()[1] for ln in f if ln.startswith("MemTotal:")), "0")
+        mem = str(int(kb) * 1024) if kb.isdigit() else ""
+        osinfo = {"os": platform_info.info()["distro"]["name"]}
     st = setup.status()
-    return {"macos": run(["/usr/bin/sw_vers", "-productVersion"], timeout=5)[1].strip(), "arch": platform.machine(),
+    return {**osinfo, "arch": platform.machine(),
             "cpu_count": os.cpu_count(), "memory_gb": _gb(int(mem)) if mem.isdigit() else None,
             "disk": {"free_gb": _gb(disk.free), "total_gb": _gb(disk.total)},
             "panel": {"python": st["runtime"]["version"], "bundled_python": st["runtime"]["bundled"]},

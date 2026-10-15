@@ -47,6 +47,11 @@ def size_bytes(text):
 
 # ---------------------------------------------------------------- ringkasan
 
+def _compose_version():
+    code, out, _ = run([DOCKER, "compose", "version", "--short"], timeout=5)
+    return out.strip() if code == 0 and out.strip() else None  # плагина compose может не быть (docker.io на Linux)
+
+
 def engine():
     info = {"cli": os.path.exists(DOCKER), "orbstack": bool(ORB), "running": False}
     if not info["cli"]:
@@ -61,7 +66,7 @@ def engine():
     info.update(running=True, version=d.get("ServerVersion"), cpus=d.get("NCPU"), memory=d.get("MemTotal"),
                 os=d.get("OperatingSystem"), kernel=d.get("KernelVersion"), driver=d.get("Driver"),
                 name=d.get("Name"), containers=d.get("Containers"), running_count=d.get("ContainersRunning"),
-                images=d.get("Images"), compose=output([DOCKER, "compose", "version", "--short"], timeout=5))
+                images=d.get("Images"), compose=_compose_version())
     return info
 
 

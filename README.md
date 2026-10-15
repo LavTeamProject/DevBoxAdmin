@@ -8,7 +8,7 @@ and lets AI agents (Claude Code, Codex, …) work on the machine **only through 
 * **No dependencies.** Python standard library on the back end, vanilla JS on the front end. No `pip install`, no `npm install`.
   A private Python 3.12 is downloaded by the installer, so nothing is needed on a clean Mac.
 * **Local only.** Listens on `127.0.0.1`; every POST needs a header; commands run as argument lists, never through a shell.
-* **Apple Silicon**, macOS 13+. UI languages: Russian (default) and English.
+* **macOS 13+ (Apple Silicon)** and **Linux (Ubuntu/Debian, arm64/x86_64)**. UI languages: Russian (default) and English.
 
 ![Dashboard](docs/screenshots/dashboard.png)
 
@@ -32,11 +32,14 @@ and lets AI agents (Claude Code, Codex, …) work on the machine **only through 
 One command (needs only `curl` and `tar`, which macOS has):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/LavTeamProject/DevBoxAdmin/main/get.sh | zsh
+curl -fsSL https://raw.githubusercontent.com/LavTeamProject/DevBoxAdmin/main/get.sh | bash
 ```
 
 It downloads the sources to `~/.service-admin/app` and runs `install.sh`; running it again updates the panel (your data in `~/.service-admin` is kept).
 To pin a version, set `SA_REF=<tag or commit>` (and optionally `SA_SHA256=<archive checksum>`). Prefer to read the script first? Open [`get.sh`](get.sh) — it is short.
+
+**On Linux** (Ubuntu 22.04/24.04, Debian 12+; arm64 or x86_64) the same command installs a systemd **user** service with its own Python — no root needed.
+A `.deb` package is also available (`packaging/deb/build.sh`). Guide with screenshots (verified on Ubuntu 24.04): [`manuals/en/install-linux.md`](manuals/en/install-linux.md).
 
 Or manually:
 
@@ -56,6 +59,7 @@ Run without installing: `python3 server.py` (Python 3.11+).
 * [`manuals/en/install-clean-mac.md`](manuals/en/install-clean-mac.md) — install on a clean Mac
 * [`manuals/en/connect-ai-agent.md`](manuals/en/connect-ai-agent.md) — connect an AI agent over MCP
 * [`manuals/en/ci-runners.md`](manuals/en/ci-runners.md) — disposable CI runners in VMs
+* Linux: [`install-linux.md`](manuals/en/install-linux.md), [`connect-ai-agent-linux.md`](manuals/en/connect-ai-agent-linux.md), [`ci-runners-linux.md`](manuals/en/ci-runners-linux.md)
 * Russian versions of the guides: [`manuals/`](manuals/README.md)
 * [`docs/roadmap.md`](docs/en/roadmap.md) — what is done, what is verified, what is not (Russian: [`docs/roadmap.md`](docs/roadmap.md))
 * [`docs/unverified.md`](docs/en/unverified.md) — honest list of things that were *not* verified on real systems

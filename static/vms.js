@@ -19,6 +19,11 @@ tabs.vms = {
     const images = drv.vms.filter((v) => v.source !== "local");
     $("headline").textContent = t("vm.count", { n: vms.length });
     if (!drv.available) {
+      if (drv.driver === "qemu") {
+        view.innerHTML = `<div class="card"><div class="name">${esc(t("vm.noQemu"))}</div><p class="muted">${esc(t("vm.noQemuBody", { pkgs: (drv.missing || []).join(" ") }))}</p>
+          ${btn(t("vm.installDeps"), "vmInstallDeps", {}, "primary")}</div>`;
+        return;
+      }
       view.innerHTML = `<div class="card"><div class="name">${esc(t("vm.noTart"))}</div><p class="muted">${esc(t("vm.noTartBody"))}</p></div>`;
       return;
     }
@@ -37,10 +42,10 @@ tabs.vms = {
       </div></td></tr>`;
     const img = (v) => `<tr><td class="mono small">${esc(v.name)}</td><td class="muted small">${esc(t("vm.disk", { d: v.disk_gb ?? "?", s: v.size_gb ?? "?" }))}</td></tr>`;
     view.innerHTML = `
-      <p class="muted">${esc(t("vm.intro"))}</p>
+      <p class="muted">${esc(t(drv.driver === "qemu" ? "vm.intro.qemu" : "vm.intro"))}</p>
       <div class="card" style="margin-bottom:14px">
         <div class="row" style="gap:8px;align-items:center"><b>${esc(t("vm.title"))}</b><span class="spacer"></span>
-          ${btn(t("vm.pull"), "vmPull", {})}</div>
+          ${drv.driver === "qemu" ? btn(t("vm.createBase"), "vmCreateBase", {}, "primary") + (drv.accel === "tcg" ? `<span class="badge amber" title="${esc(t("vm.tcgHint"))}">TCG</span>` : "") : btn(t("vm.pull"), "vmPull", {})}</div>
         ${vms.length ? `<table><tbody>${vms.map(row).join("")}</tbody></table>` : `<p class="muted">${esc(t("vm.none"))}</p>`}
       </div>
       <div class="card" style="margin-bottom:14px">
@@ -92,6 +97,13 @@ handlers.vmRestore = (d) => {
 handlers.vmDelete = (d) => {
   const typed = prompt(t("vm.deletePrompt", { name: d.name }));
   if (typed !== null) return vmRun("vm.delete", { name: d.name, confirm: typed });
+};
+handlers.vmInstallDeps = async () => runJob(api("/api/vms/install-deps", {}), () => tabs.vms.load());
+handlers.vmCreateBase = () => {
+  const name = prompt(t("vm.baseName"), "ubuntu-base");
+  if (!name) return;
+  const size = parseInt(prompt(t("vm.baseSize"), "20"), 10);
+  if (size) return vmRun("vm.create_base", { name, size_gb: size });
 };
 handlers.vmPull = () => {
   const image = prompt(t("vm.pullImage"), "ghcr.io/cirruslabs/macos-tahoe-vanilla:latest");

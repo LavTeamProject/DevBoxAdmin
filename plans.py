@@ -22,6 +22,7 @@ import threading
 import time
 from http import HTTPStatus
 
+import approval
 import audit
 import operations
 import core
@@ -29,14 +30,14 @@ from core import DATA_DIR, JOBS, ApiError
 
 PLANS_FILE = os.path.join(DATA_DIR, "plans.json")
 POLICY_FILE = os.path.join(DATA_DIR, "agent-policy.json")
-OSASCRIPT = "/usr/bin/osascript"
+OSASCRIPT = approval.OSASCRIPT  # совместимость; подмена в тестах — approval.OSASCRIPT
 TTL = 15 * 60
 MAX_PENDING = 5
 MAX_EXEC_PER_HOUR = 10
 ESCALATE_WINDOW = 3600
 MAX_SAME_FAILS = 2      # одинаковый план провалился/отклонён столько раз — дальше решает человек
 MAX_FAILS_PER_WINDOW = 4  # всего неудач агента за окно
-DIALOG_SECONDS = 110
+DIALOG_SECONDS = approval.DIALOG_SECONDS
 KEEP_PLANS = 200
 AGENT_OPS_L3 = ("runner.spawn", "runner.selftest")  # внешние действия CI: только агентам уровня L3 и ТОЛЬКО через диалог
 AGENT_OPS = ("snapshot.create", "backup.run", "profile.install", "package.install", "project.run", "docker.container_control", *AGENT_OPS_L3)
@@ -268,23 +269,13 @@ def _dialog_text(p, lang="ru"):
 def ask_human(p):
     """→ "approve" | "reject" | "unavailable". Системный диалог macOS для плана агента."""
     lang = _ui_lang()
-    return _ask(_dialog_text(p, lang), lang)
+    return _ask(_dialog_text(p, lang), lang, p["id"])
 
 
-def _ask(text, lang):
-    """Системный диалог macOS; текст передаётся аргументом (без интерполяции в скрипт); кнопка по умолчанию — «Отклонить»."""
-    d = DIALOG_TEXT[lang]
-    script = ('on run argv\n display dialog (item 1 of argv) with title (item 2 of argv) '
-              'buttons {(item 3 of argv), (item 4 of argv)} default button (item 3 of argv) cancel button (item 3 of argv) with icon caution '
-              f'giving up after {DIALOG_SECONDS}\nend run')
-    try:
-        r = subprocess.run([OSASCRIPT, "-e", script, text, d["title"], d["reject"], d["approve"]],
-                           capture_output=True, text=True, timeout=DIALOG_SECONDS + 15)
-    except (OSError, subprocess.TimeoutExpired):
-        return "unavailable"
-    if r.returncode != 0:
-        return "reject" if "-128" in r.stderr or "User canceled" in r.stderr else "unavailable"
-    return "approve" if f"button returned:{d['approve']}" in r.stdout and "gave up:false" in r.stdout else "reject"
+def _ask(text, lang, rid=None):
+    """Спрашивает человека через канал подтверждения платформы (approval.py): диалог macOS / zenity / корневой помощник Linux.
+    → "approve" | "reject" | "unavailable"; кнопка по умолчанию — «Отклонить»."""
+    return approval.ask(text, DIALOG_TEXT[lang], lang, rid or "direct-" + secrets.token_hex(6))
 
 
 def _decide(plan_id, decision, by):
@@ -309,6 +300,10 @@ def approve(body):
         raise ApiError("План не найден", HTTPStatus.NOT_FOUND, code="plan.not_found")
     if _status(p) != "pending":
         raise ApiError("План не ожидает подтверждения", HTTPStatus.CONFLICT, code="plan.not_pending")
+    ch = approval.channel() if (policy()["approval"] != "panel" or p["level"] == "L3") else None
+    if ch is not None and ch["name"] is None:  # нет канала → fail closed, человека не спросить
+        raise ApiError("No approval channel is available on this system (no dialog and no safe root helper); the plan cannot be approved",
+                       HTTPStatus.CONFLICT, code="plan.no_approval_channel", unsafe=",".join(ch.get("unsafe") or []))
     if policy()["approval"] == "panel" and p["level"] != "L3":  # L3 — ВСЕГДА системный диалог, режим «кнопка в панели» на него не действует
         _update(p["id"], status="awaiting_human")
         _decide(p["id"], "approve", "panel")

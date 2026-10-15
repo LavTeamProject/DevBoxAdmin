@@ -60,7 +60,7 @@ Object.assign(I18N.en, {
   "cfg.validate": "Validate",
   "cfg.reload": "Reload",
   "cfg.save": "Save (⌘S)",
-  "cfg.sensitiveWarn": "This file contains passwords/API keys. Its contents are shown only on this Mac — do not screenshot or share them.",
+  "cfg.sensitiveWarn": "This file contains passwords/API keys. Its contents are shown only on this computer — do not screenshot or share them.",
   "cfg.backup": "Backups",
   "cfg.backupNote": "(automatic on every save, last 20)",
   "cfg.loadToEditor": "Load into editor",

@@ -7,7 +7,7 @@
 
 * **Без зависимостей.** Python stdlib и ванильный JS. Свой Python 3.12 скачивает установщик — на чистом Mac ничего не нужно.
 * **Только локально.** Слушает `127.0.0.1`, команды запускаются списком аргументов, без shell.
-* **Apple Silicon**, macOS 13+. Язык интерфейса: русский (по умолчанию) и английский.
+* **macOS 13+ (Apple Silicon)** и **Linux (Ubuntu/Debian, arm64/x86_64)**. Язык интерфейса: русский (по умолчанию) и английский.
 
 ## Возможности
 
@@ -21,11 +21,14 @@ Agent Control API для ИИ-агентов (уровни L1–L3, планы �
 Одной командой (нужны только `curl` и `tar`, они есть в macOS):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/LavTeamProject/DevBoxAdmin/main/get.sh | zsh
+curl -fsSL https://raw.githubusercontent.com/LavTeamProject/DevBoxAdmin/main/get.sh | bash
 ```
 
 Скрипт скачает исходники в `~/.service-admin/app` и запустит `install.sh`; повторный запуск обновляет панель (данные в `~/.service-admin` не трогаются).
 Чтобы закрепить версию: `SA_REF=<тег или коммит>` (и, по желанию, `SA_SHA256=<сумма архива>`). Скрипт короткий, его можно прочитать заранее: [`get.sh`](get.sh).
+
+**На Linux** (Ubuntu 22.04/24.04, Debian 12+; arm64 или x86_64) та же команда ставит службу systemd **пользователя** со своим Python — root не нужен.
+Есть и пакет `.deb` (`packaging/deb/build.sh`). Руководство со скриншотами (проверено на Ubuntu 24.04): [`manuals/install-linux.md`](manuals/install-linux.md).
 
 Или вручную:
 
@@ -40,7 +43,7 @@ cd ~/service-admin
 ## Руководства
 
 [`manuals/install-clean-mac.md`](manuals/install-clean-mac.md) · [`manuals/connect-ai-agent.md`](manuals/connect-ai-agent.md) ·
-[`manuals/ci-runners.md`](manuals/ci-runners.md) · [`docs/roadmap.md`](docs/roadmap.md) · [`docs/unverified.md`](docs/unverified.md)
+[`manuals/ci-runners.md`](manuals/ci-runners.md) · Linux: [`install-linux.md`](manuals/install-linux.md), [`connect-ai-agent-linux.md`](manuals/connect-ai-agent-linux.md), [`ci-runners-linux.md`](manuals/ci-runners-linux.md) · [`docs/roadmap.md`](docs/roadmap.md) · [`docs/unverified.md`](docs/unverified.md)
 
 ## Безопасность
 

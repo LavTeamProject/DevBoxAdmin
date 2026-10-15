@@ -1,6 +1,6 @@
 #!/bin/sh
 # Обёртка: Python панели (бандл) или системный; см. cli.py
-D="$(cd "$(dirname "$0")" && pwd)"
+D="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")" && pwd)"   # работает и по симлинку (/usr/bin/service-admin → /opt/service-admin)
 PY="$HOME/.service-admin/runtime/python/bin/python3"
 [ -x "$PY" ] || PY=python3
 exec "$PY" "$D/cli.py" "$@"

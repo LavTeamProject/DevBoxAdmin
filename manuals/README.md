@@ -7,6 +7,9 @@
 | [install-clean-mac.md](install-clean-mac.md) | Установка на **чистый Mac**: установщик, приложение, «Подготовка системы», Command Line Tools — со скриншотами |
 | [connect-ai-agent.md](connect-ai-agent.md) | Подключить ИИ-агента (Claude Code и др.) по MCP: уровни L1–L3, подтверждение в системном диалоге |
 | [ci-runners.md](ci-runners.md) | CI-раннеры по требованию в одноразовых ВМ (Gitea/Forgejo, GitHub): токен доступа, самотест, агент L3 |
+| [install-linux.md](install-linux.md) | Установка на **Linux** (Ubuntu/Debian): одна команда или `.deb`, служба systemd, подготовка системы, профили, пакеты и службы — со скриншотами |
+| [connect-ai-agent-linux.md](connect-ai-agent-linux.md) | ИИ-агент на Linux: как человек подтверждает действия (окно или `service-admin approve`), когда канал отключается |
+| [ci-runners-linux.md](ci-runners-linux.md) | CI-раннеры на Linux: QEMU без root, основа из образа Ubuntu, изоляция сети, KVM |
 
 Скриншоты лежат в `img/` (JPEG, обрезаны и уменьшены). **Правило:** новое руководство — в эту папку; скриншоты — только с настоящей системы (ВМ или ваш Mac), без персональных данных.
 

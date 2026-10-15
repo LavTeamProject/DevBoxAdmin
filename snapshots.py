@@ -17,6 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 from http import HTTPStatus
 
 import mobile
+import platform_info
 import profiles
 import runtimes
 import setup
@@ -67,6 +68,24 @@ def _collect_brew():
             "complete": None not in (formulae, casks, taps, bundle)}
 
 
+def _collect_apt():
+    """Linux: вручную установленные пакеты apt и их версии (dpkg-query). На macOS — {"available": False}."""
+    import platform_info
+    if not platform_info.has("pkg.apt"):
+        return {"available": False}
+    try:
+        manual = set(run(["apt-mark", "showmanual"], timeout=30)[1].split())
+        out = run(["dpkg-query", "-W", "-f", "${Package}\\t${Version}\\n"], timeout=30)[1]
+    except Exception:  # noqa: BLE001
+        return {"available": True, "manual": {}, "complete": False}
+    vers = {}
+    for line in out.splitlines():
+        name, _, ver = line.partition("\t")
+        if name in manual:
+            vers[name] = ver
+    return {"available": True, "manual": vers, "complete": bool(vers)}
+
+
 def _collect_runtimes():
     try:
         langs = runtimes.detect(True)["langs"]
@@ -111,6 +130,8 @@ def _collect_profiles():
 
 
 def _macos():
+    if sys.platform != "darwin":
+        return platform_info._os_release().get("PRETTY_NAME")  # noqa: SLF001
     try:
         return run(["/usr/bin/sw_vers", "-productVersion"], timeout=5)[1].strip()
     except Exception:  # noqa: BLE001
@@ -133,7 +154,7 @@ def collect(label=""):
     return {"schema": SCHEMA, "created": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "label": label,
             "system": {"macos": _macos(), "arch": platform.machine()},
             "panel": {"python": rt["version"], "bundled": rt["bundled"]},
-            "brew": brew, "runtimes": rts, **mob, "profiles": prof,
+            "brew": brew, "apt": _collect_apt(), "runtimes": rts, **mob, "profiles": prof,
             "setup": {k: v for k, v in setup.status().items() if k in ("ready", "missing")},
             "took_ms": int((time.time() - t0) * 1000)}
 
@@ -181,6 +202,7 @@ def _summary(snap):
     brew = snap.get("brew") or {}
     return {"id": snap.get("id"), "created": snap.get("created"), "label": snap.get("label", ""),
             "counts": {"formulae": len(brew.get("formulae", {})), "casks": len(brew.get("casks", {})),
+                       "apt": len((snap.get("apt") or {}).get("manual", {})),
                        "runtimes": len(snap.get("runtimes", [])),
                        "xcode": len(((snap.get("xcode") or {}).get("installs")) or [])},
             "brew_available": bool(brew.get("available")), "complete": brew.get("complete")}
@@ -229,6 +251,7 @@ def facts(snap):
     f["brew.formula"] = dict(brew.get("formulae", {}))
     f["brew.cask"] = dict(brew.get("casks", {}))
     f["brew.tap"] = {t: "" for t in brew.get("taps", [])}
+    f["apt.manual"] = dict((snap.get("apt") or {}).get("manual", {}))
     f["runtime"] = {r["key"]: f'{r.get("version") or "?"} · {r.get("source") or "?"}' for r in snap.get("runtimes", [])}
     x = snap.get("xcode") or {}
     f["xcode"] = {f'Xcode {i.get("version")}': i.get("build") or "" for i in x.get("installs", [])}

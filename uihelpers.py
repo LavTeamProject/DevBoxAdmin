@@ -4,9 +4,12 @@ Activity Monitor, детали проекта. Вынесено из server.py; 
 import os
 import plistlib
 import re
+import shutil
+import sys
 import subprocess
 from http import HTTPStatus
 
+import core
 import dockerx
 import files
 import gitops
@@ -74,7 +77,20 @@ TERMINAL_APPS = {
 }
 
 
+LINUX_TERMINALS = ("x-terminal-emulator", "gnome-terminal", "konsole", "xfce4-terminal", "kitty", "alacritty", "xterm")
+
+
+def _linux_terminal():
+    import platform_info
+    if not platform_info.info()["gui"]:
+        return None
+    return next((n for n in LINUX_TERMINALS if shutil.which(n, path=core.ENV["PATH"])), None)
+
+
 def terminal_apps(q=None):
+    if sys.platform != "darwin":
+        name = _linux_terminal()
+        return {"apps": [{"id": "terminal", "name": name}] if name else []}
     return {"apps": [{"id": k, "name": n} for k, (n, paths) in TERMINAL_APPS.items() if any(os.path.exists(p) for p in paths)]}
 
 
@@ -89,6 +105,16 @@ def open_in_terminal(body):
     if app not in [a["id"] for a in terminal_apps()["apps"]]:
         app = "terminal"
     line = f"cd {shlex.quote(cwd)}" + (f" && {command}" if command else "")
+    if sys.platform != "darwin":
+        name = _linux_terminal()
+        if not name:
+            raise ApiError("Нет графической сессии или эмулятора терминала: используйте терминал панели", HTTPStatus.CONFLICT, code="platform.unsupported")
+        exe = shutil.which(name, path=core.ENV["PATH"])
+        script = line + "; exec bash"
+        lead = {"gnome-terminal": ["--"], "xfce4-terminal": ["-x"], "kitty": []}.get(name, ["-e"])  # у каждого эмулятора свой способ передать команду
+        argv = [exe, *lead, "bash", "-c", script]
+        subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True, env=core.ENV)
+        return {"ok": True, "app": name, "pasted": False}
     # perintah dikirim sebagai argumen (argv), bukan disisipkan ke teks AppleScript
     scripts = {
         "terminal": 'on run argv\n tell application "Terminal"\n  activate\n  do script (item 1 of argv)\n end tell\nend run',
@@ -113,6 +139,8 @@ def open_in_terminal(body):
 
 def open_activity_monitor(body):
     """Buka Activity Monitor; kalau belum jalan, pilih tab-nya dulu (CPU/Memori/Energi/Disk/Jaringan)."""
+    if sys.platform != "darwin":
+        raise ApiError("Мониторинг системы macOS недоступен на этой системе", HTTPStatus.CONFLICT, code="platform.unsupported")
     tab = {"cpu": 0, "mem": 1, "energy": 2, "disk": 3, "network": 4}.get(body.get("tab"), 0)
     running = run(["pgrep", "-x", "Activity Monitor"], timeout=5)[0] == 0
     if not running:

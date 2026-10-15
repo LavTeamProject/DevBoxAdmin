@@ -189,7 +189,7 @@ const k=Object.keys(I.ru);for(const [l,d] of Object.entries(I))console.log(l,k.f
 | `projects.py` | Git repos: folder scanning, status/branch/worktree/log/diff, `gh` for PR/issue/CI, registry & presets. **Git: read-only** |
 | `gitops.py` | Git write actions (`POST /api/git/op`): fetch/pull(--ff-only)/push(no --force), branch, stash, add/commit, worktree (only in `~/Worktrees`), discard/clean (must type the project name on the SERVER). Ids & files are validated against the repo state; `build()` is pure |
 | `agents.py` | AI session monitoring: maps agent processes to PTY sessions (needs `pid` from `ptyterm.list_sessions`) + CPU/RAM per process tree. **Monitor only** |
-| `operations.py` | **The single operations catalog** (Phase 4.1): 86 operations — levels L1–L4 + escalation, parameter schema, requirements (`REQUIREMENTS`), idempotent, verification, rollback; `plan/verify/execute`. Homebrew package operations are executed ONLY via `run_package` (server.py only wraps it). New operation → register it here; the catalog is checked in both directions against `gitops`/`mobile_ops` |
+| `operations.py` | **The single operations catalog** (Phase 4.1): 88 operations — levels L1–L4 + escalation, parameter schema, requirements (`REQUIREMENTS`), idempotent, verification, rollback; `plan/verify/execute`. Homebrew package operations are executed ONLY via `run_package` (server.py only wraps it). New operation → register it here; the catalog is checked in both directions against `gitops`/`mobile_ops` |
 | `opschema.py` | Shared parameter-schema validator (agent gateway + operations) |
 | `plans.py` | **Plan + approval** (Phase 4.2/4.4): `propose → approve (macOS dialog) → execute (once, hash re-checked → `plan.stale`) → verify`. Agents: 6 L2 operations (`AGENT_OPS`, including `docker.container_control` — LOCAL Docker engine only) and, only for L3-level agents, `AGENT_OPS_L3` (`runner.spawn`, `runner.selftest`) — the macOS dialog is REQUIRED, `auto_approve` is impossible for L3, max 3/hour; default approval = the macOS system dialog (default button Reject, timeout 110 s = reject, text via argv). `auto_approve` only for L2, explicit + audited. **Do not add operations to `AGENT_OPS` without updating the roadmap.** Test with a fake `ask_human` & `osascript` — do not show real dialogs on the work machine |
 | `agent_gateway.py` | AI agent gateway (Phase 4.0): registry (`agent-registry.json`, only SHA-256 hashes; secrets in `agents/<id>.token` 0600), read-only L1 tools, schema validation, rate limit 60/min, audit with agent identity. **There is no `execute_shell`.** |
@@ -249,6 +249,13 @@ const k=Object.keys(I.ru);for(const [l,d] of Object.entries(I))console.log(l,k.f
 - Colors always via CSS tokens (`--bg`, `--card`, `--text`, `--series-1..4`, …). Theme: light/dark/
   system via `html[data-theme]`; dark tokens are defined in two places (media query + `[data-theme="dark"]`).
 - Always `esc()` dynamic data in template strings.
+
+## Platform rule (Phase 6, Linux)
+
+- The panel must not decide behaviour with `sys.platform` or by calling macOS-only tools (`brew`, `osascript`, `launchctl`, `xcrun`) in new code without going through
+  `platform_info.py` (`has("capability")`, `is_macos()`); catalog operations that exist only on macOS carry the requirement `macos` (see `_platform_requirements()` in `operations.py`).
+- Pages that do not exist on a platform are hidden in the UI by `data-cap` on the sidebar item (capabilities come from `GET /api/platform`).
+- Unit tests: `python3 -m unittest discover -s tests` (stdlib, no privileges, runs in CI on Ubuntu x86_64/arm64 and macOS).
 
 ## Verification
 

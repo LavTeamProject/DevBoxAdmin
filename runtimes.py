@@ -9,6 +9,7 @@ import os
 import plistlib
 import re
 import subprocess
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from http import HTTPStatus
@@ -80,7 +81,7 @@ def source_of(path):
              (f"{HOME}/.rvm", "rvm"), ("/Library/Frameworks/Python.framework", "python.org"),
              (f"{HOME}/.local/share/uv", "uv"), (f"{HOME}/sdk/go", "golang.org/dl"),
              ("/Library/Java/JavaVirtualMachines", "Зарегистрированный JDK"), ("/Applications/Xcode", "Xcode"),
-             ("/Library/Developer/CommandLineTools", "Xcode CLT"), ("/usr/bin/", "macOS"),
+             ("/Library/Developer/CommandLineTools", "Xcode CLT"), ("/usr/bin/", "macOS" if sys.platform == "darwin" else "system"),
              ("/System/", "macOS"), (f"{HOME}/.deno", "deno"), (f"{HOME}/.bun", "bun")]
     for prefix, label in rules:
         if path and path.startswith(prefix) or real.startswith(prefix):
@@ -91,6 +92,11 @@ def source_of(path):
 def brew_formula(path):
     m = re.search(r"/Cellar/([^/]+)/", os.path.realpath(path or ""))
     return m[1] if m else None
+
+
+LANG_APT = {"php": "php-cli", "node": "nodejs", "go": "golang-go", "rust": "rustup", "java": "default-jdk", "ruby": "ruby", "dotnet": "dotnet-sdk-8.0",
+            "scala": "scala", "elixir": "elixir", "erlang": "erlang", "haskell": "ghc", "ocaml": "ocaml", "r": "r-base", "nim": "nim", "lua": "lua5.4",
+            "zig": "zig", "julia": "julia", "crystal": "crystal", "kotlin": "kotlin"}
 
 
 def detect(force=False):
@@ -118,6 +124,11 @@ def detect(force=False):
     found_keys = {d["key"] for d in data}
     available = [{"key": k, "name": n, "formula": INSTALL[k][0], "type": INSTALL[k][1]}
                  for k, n, _, _ in LANGS if k not in found_keys and k in INSTALL]
+    if sys.platform != "darwin":  # Linux: устанавливаем пакетами apt (если такой пакет есть в индексах)
+        import svc
+        known = svc._apt_pkgs()  # noqa: SLF001
+        available = [{"key": k, "name": n, "formula": LANG_APT[k], "type": "formula"}
+                     for k, n, _, _ in LANGS if k not in found_keys and LANG_APT.get(k) in known]
     state = load_state()
     for d in data:  # versi default diatur lewat Service Admin?
         d["overridden"] = bool((state.get("shims") or {}).get(d["key"])) or bool((state.get("env") or {}).get(d["key"])) \

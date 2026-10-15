@@ -13,7 +13,7 @@ from http import HTTPStatus
 
 import brewsvc
 import runtimes
-from core import (BREW_PREFIX, DATA_DIR, ENV, HOME, SHIM_DIR, ZSHRC_BLOCK_START, ApiError, load_state, loads_or, read_home, run,
+from core import (shell_name, shell_rc, BREW_PREFIX, DATA_DIR, ENV, HOME, SHIM_DIR, ZSHRC_BLOCK_START, ApiError, load_state, loads_or, read_home, run,
                   save_state, set_shims, start_job, start_steps, tail)
 
 
@@ -64,7 +64,7 @@ def shell_check():
     script = ('echo "__PHP__$(command -v php)"; echo "__PHPV__$(php -r \'echo PHP_VERSION;\' 2>/dev/null)"; '
               'echo "__NODE__$(command -v node)"; echo "__NODEV__$(node -v 2>/dev/null)"')
     try:
-        _, out, _ = run(["zsh", "-i", "-c", script], timeout=20)
+        _, out, _ = run([shell_name(), "-i", "-c", script], timeout=20)
     except subprocess.TimeoutExpired:
         return {}
     result = {}
@@ -104,7 +104,7 @@ def php_info():
         "versions": php_versions(), "selected": active if os.path.islink(link) else None,
         "shell": {"path": shell.get("php"), "version": shell.get("phpv")},
         "shim_active": shell.get("php") == link,
-        "block_installed": ZSHRC_BLOCK_START in read_home(".zshrc"),
+        "block_installed": ZSHRC_BLOCK_START in read_home(shell_rc()),
         "herd": herd_versions(),
     }
 

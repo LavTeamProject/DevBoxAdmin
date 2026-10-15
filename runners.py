@@ -86,12 +86,24 @@ class Provider:
         return out
 
 
+def _plat():
+    """Платформа ГОСТЯ = платформа хоста (гость той же ОС/архитектуры): (суффикс GitHub-раннера, суффикс gitea-runner)."""
+    import platform
+    import sys
+    mach = platform.machine().lower()
+    if sys.platform == "darwin":
+        return "osx-arm64", "darwin-arm64"
+    if mach in ("aarch64", "arm64"):
+        return "linux-arm64", "linux-arm64"
+    return "linux-x64", "linux-amd64"
+
+
 class GithubProvider(Provider):
     id = "github"
     title = "GitHub Actions runner"
     binary = "run.sh"
     API = "https://api.github.com/repos/actions/runner/releases/latest"
-    URL_RE = re.compile(r"^https://github\.com/actions/runner/releases/download/v[0-9.]+/actions-runner-osx-arm64-[0-9.]+\.tar\.gz$")
+    URL_RE = re.compile(r"^https://github\.com/actions/runner/releases/download/v[0-9.]+/actions-runner-(osx-arm64|linux-x64|linux-arm64)-[0-9.]+\.tar\.gz$")
 
     def allowed_url(self, url):
         return bool(self.URL_RE.match(url))
@@ -101,7 +113,7 @@ class GithubProvider(Provider):
         ver = str(rel.get("tag_name", "")).lstrip("v")
         for a in rel.get("assets", []):
             digest = str(a.get("digest") or "")
-            if (a.get("name") == f"actions-runner-osx-arm64-{ver}.tar.gz" and VER_RE.match(ver) and digest.startswith("sha256:")
+            if (a.get("name") == f"actions-runner-{_plat()[0]}-{ver}.tar.gz" and VER_RE.match(ver) and digest.startswith("sha256:")
                     and self.allowed_url(a.get("browser_download_url", ""))):
                 return {"version": ver, "url": a["browser_download_url"], "sha256": digest[7:], "kind": "tar"}
         raise ApiError("Official runner release not found or has no checksum", HTTPStatus.BAD_GATEWAY, code="runner.no_release")
@@ -112,7 +124,7 @@ class GiteaProvider(Provider):
     title = "Gitea / Forgejo Actions runner"
     binary = "gitea-runner"
     API = "https://gitea.com/api/v1/repos/gitea/runner/releases/latest"
-    URL_RE = re.compile(r"^https://gitea\.com/gitea/runner/releases/download/v[0-9.]+/gitea-runner-[0-9.]+-darwin-arm64\.xz(\.sha256)?$")
+    URL_RE = re.compile(r"^https://gitea\.com/gitea/runner/releases/download/v[0-9.]+/gitea-runner-[0-9.]+-(darwin-arm64|linux-amd64|linux-arm64)\.xz(\.sha256)?$")
 
     def allowed_url(self, url):
         return bool(self.URL_RE.match(url))
@@ -123,7 +135,7 @@ class GiteaProvider(Provider):
         if not VER_RE.match(ver) or rel.get("prerelease"):
             raise ApiError("Official runner release not found or has no checksum", HTTPStatus.BAD_GATEWAY, code="runner.no_release")
         urls = {a.get("name"): a.get("browser_download_url", "") for a in rel.get("assets", [])}
-        name = f"gitea-runner-{ver}-darwin-arm64.xz"
+        name = f"gitea-runner-{ver}-{_plat()[1]}.xz"
         url, sum_url = urls.get(name, ""), urls.get(name + ".sha256", "")
         if not (self.allowed_url(url) and self.allowed_url(sum_url)):
             raise ApiError("Official runner release not found or has no checksum", HTTPStatus.BAD_GATEWAY, code="runner.no_release")
@@ -225,8 +237,8 @@ def _install(pid):
 def install(body):
     """POST /api/runners/install {provider} → {"job": id}."""
     prov = provider((body or {}).get("provider"))
-    if os.uname().machine != "arm64":
-        raise ApiError("Only Apple Silicon (arm64) runners are supported", HTTPStatus.CONFLICT, code="runner.arch")
+    if os.uname().machine.lower() not in (("arm64",) if os.uname().sysname == "Darwin" else ("arm64", "aarch64", "x86_64", "amd64")):
+        raise ApiError("Only Apple Silicon (macOS) or arm64/x86_64 (Linux) hosts are supported", HTTPStatus.CONFLICT, code="runner.arch")
     if shutil.disk_usage("/").free < 5e9:
         raise ApiError("At least 5 GB of free disk space is needed", HTTPStatus.CONFLICT, code="runner.disk")
     return {"job": start_steps(f"Install {prov.title} (files only)", [("download, verify, unpack", _install(prov.id), {})], "runner")}

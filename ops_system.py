@@ -7,12 +7,14 @@
 Уровни: L2 — ограниченные обратимые изменения; L3 — административные/затрагивающие данные или внешний мир; L4 — разрушающие.
 """
 import os
+import sys
 
 import brewsvc
 import dockerx
 import files
 import herdphp
 import opschema
+from core import ApiError
 import runtimes
 import svc
 from operations import REQUIREMENTS, _register
@@ -23,7 +25,7 @@ REQUIREMENTS.update({
     "docker": (lambda: os.path.exists(dockerx.DOCKER), "The Docker CLI must be installed"),
 })
 
-NAME = {"type": "string", "pattern": r"[A-Za-z0-9@._+-]{1,100}", "description": "Homebrew formula / service name"}
+NAME = {"type": "string", "pattern": r"[A-Za-z0-9@._+-]{1,100}", "description": "Package / service name"}
 HERD_VER = {"type": "string", "pattern": r"\d+\.\d+", "description": "PHP version like 8.4"}
 NODE_VER = {"type": "string", "pattern": r"(v?\d+(\.\d+){0,2}|lts/[a-z*]+|node|system)", "maxLength": 40}
 TARGET = {"type": "string", "pattern": r"^[A-Za-z0-9][A-Za-z0-9_.:/@-]{0,199}$", "description": "container / image / volume / network / compose project"}
@@ -31,7 +33,10 @@ FREE = {"type": "object", "additionalProperties": True}
 
 
 def _wrap(r):
-    """Ответ функции модуля → форма каталога: {"job": id} или {"done": True, "result": …}."""
+    """Ответ функции модуля → форма каталога: {"job": id} или {"done": True, "result": …}.
+    Команда «для терминала» (Linux без графической сессии) агенту не отдаётся и успехом не считается — это отказ, ничего не выполнено."""
+    if isinstance(r, dict) and "terminal" in r and "job" not in r:
+        raise ApiError("An administrator terminal is needed for this command; it was not run", code="platform.needs_terminal", command=r["terminal"])
     return r if isinstance(r, dict) and "job" in r else {"done": True, "result": r}
 
 
@@ -57,11 +62,19 @@ def _svc_state(name):
     return next((s for s in brewsvc.list_services() if s["name"] == name), None)
 
 
+_SVC_REQ = ("systemd",) if sys.platform != "darwin" else ("homebrew",)
+
+
 def _svc_plan(want_running):
     def plan(p):
         s = _svc_state(p["name"])
         if not s:
             return {"will_change": False, "note": "unknown service"}
+        if sys.platform != "darwin" and s.get("scope") == "system":
+            import platform_info
+            if not platform_info.has("elevation.gui"):  # системная служба = права администратора: агентам без графической сессии (polkit) путь закрыт
+                raise ApiError("Administrator rights are needed for a system service: a graphical session with polkit (pkexec) is required",
+                               code="platform.needs_admin_gui")
         running = bool(s.get("running"))
         return {"will_change": running != want_running, "current": "running" if running else "stopped"}
     return plan
@@ -76,17 +89,18 @@ def _svc_verify(want_running):
 
 
 for _act, _lvl, _run in (("start", "L2", True), ("stop", "L2", False), ("restart", "L2", True)):
-    _reg(f"service.{_act}", f"{_act.capitalize()} a Homebrew service", f"brew services {_act} <name>", _lvl, "service", opschema.obj({"name": NAME}, ["name"]),
-         lambda p, a=_act: brewsvc.service_action({"name": p["name"], "action": a}), requires=("homebrew",), idempotent=_act != "restart",
+    _reg(f"service.{_act}", f"{_act.capitalize()} a {'' if sys.platform != 'darwin' else 'Homebrew '}service", (f"systemctl {_act} <name>" if sys.platform != "darwin" else f"brew services {_act} <name>"), _lvl, "service", opschema.obj({"name": NAME}, ["name"]),
+         lambda p, a=_act: brewsvc.service_action({"name": p["name"], "action": a}), requires=_SVC_REQ, idempotent=_act != "restart",
          rollback="the opposite action", verify="the service state matches the action", plan=_svc_plan(_run), verify_fn=_svc_verify(_run), result="immediate")
-_reg("service.kill", "Kill a Homebrew service", "brew services kill <name>: stops the service forcibly", "L3", "service", opschema.obj({"name": NAME}, ["name"]),
-     lambda p: brewsvc.service_action({"name": p["name"], "action": "kill"}), requires=("homebrew",), rollback="service.start", result="immediate",
+_reg("service.kill", ("Kill a service" if sys.platform != "darwin" else "Kill a Homebrew service"), ("systemctl kill <name>: stops the service forcibly" if sys.platform != "darwin" else "brew services kill <name>: stops the service forcibly"), "L3", "service", opschema.obj({"name": NAME}, ["name"]),
+     lambda p: brewsvc.service_action({"name": p["name"], "action": "kill"}), requires=_SVC_REQ, rollback="service.start", result="immediate",
      plan=_svc_plan(False))
 _reg("service.install", "Install a service package", "Install a Homebrew formula that provides a service", "L2", "service",
-     opschema.obj({"formula": NAME}, ["formula"]), lambda p: svc.service_install({"formula": p["formula"]}), requires=("homebrew", "disk_10gb"),
+     opschema.obj({"formula": NAME}, ["formula"]), lambda p: svc.service_install({"formula": p["formula"]}), requires=(("apt", "admin_rights", "disk_10gb") if sys.platform != "darwin" else ("homebrew", "disk_10gb")),
      idempotent=True, rollback="service.uninstall", verify="the formula appears among installed packages")
 _reg("service.uninstall", "Uninstall a service package", "Stop the service and `brew uninstall` it", "L3", "service", opschema.obj({"name": NAME}, ["name"]),
-     lambda p: svc.service_uninstall({"name": p["name"]}, brewsvc.known_service), requires=("homebrew",), rollback="service.install (data of the service may be lost)")
+     lambda p: svc.service_uninstall({"name": p["name"]}, brewsvc.known_service), requires=(("apt", "admin_rights") if sys.platform != "darwin" else ("homebrew",)),
+     rollback="service.install (data of the service may be lost)")
 _reg("service.config_save", "Save a service config file", "Write a registered service config file (validated, backed up first, optional restart)", "L3", "service",
      opschema.obj({"name": NAME, "path": {"type": "string", "maxLength": 400}, "content": {"type": "string", "maxLength": 1_000_000},
                    "restart": {"type": "boolean"}, "force": {"type": "boolean"}}, ["name", "path", "content"]),

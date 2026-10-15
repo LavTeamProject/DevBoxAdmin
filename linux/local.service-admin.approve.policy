@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN" "http://www.freedesktop.org/standards/PolicyKit/1.0/policyconfig.dtd">
+<policyconfig>
+  <vendor>Service Admin</vendor>
+  <action id="local.service-admin.approve">
+    <description>Approve an AI agent action in Service Admin</description>
+    <description xml:lang="ru">Одобрить действие ИИ-агента в Service Admin</description>
+    <message>Authentication is required to approve an action requested by an AI agent</message>
+    <message xml:lang="ru">Для одобрения действия ИИ-агента нужен пароль администратора</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/local/libexec/service-admin-approve</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">false</annotate>
+  </action>
+</policyconfig>

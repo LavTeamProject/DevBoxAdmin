@@ -22,26 +22,27 @@ tabs.mobile = {
     const d = this.data;
     if (!d) return;
     const s = d.summary;
-    $("headline").textContent = `Xcode ${s.xcode ? "✓" : "✗"} · Flutter ${s.flutter ? "✓" : "✗"} · Android ${s.android ? "✓" : "✗"}`;
+    const mac = (window.PLATFORM?.os || "macos") === "macos";   // Xcode и симуляторы iOS — только на macOS
+    $("headline").textContent = `${mac ? `Xcode ${s.xcode ? "✓" : "✗"} · ` : ""}Flutter ${s.flutter ? "✓" : "✗"} · Android ${s.android ? "✓" : "✗"}`;
 
     view.innerHTML = `
       <div class="ro-banner"><span>${t("mobile.intro")}</span></div>
       <div class="stat">
-        <div class="card"><div>${esc(t("mobile.xcode.title"))}</div><div>${esc(d.xcode.active?.version || t("common.notFound"))}</div>
-          <div class="muted small">${d.xcode.installs.length} × <code>/Applications/Xcode*.app</code></div></div>
+        ${mac ? `<div class="card"><div>${esc(t("mobile.xcode.title"))}</div><div>${esc(d.xcode.active?.version || t("common.notFound"))}</div>
+          <div class="muted small">${d.xcode.installs.length} × <code>/Applications/Xcode*.app</code></div></div>` : ""}
         <div class="card"><div>${esc(t("mobile.flutter.sdk"))}</div><div>${esc(d.flutter.sdk?.version || t("common.notFound"))}</div>
           <div class="muted small">${esc(d.flutter.sdk?.channel || "")} ${d.flutter.sdk?.dart ? "· Dart " + esc(d.flutter.sdk.dart) : ""}</div></div>
-        <div class="card"><div>${esc(t("mobile.sim.title"))}</div><div>${esc(t("mobile.sim.runtimes"))}: ${d.xcode.runtimes.length}</div>
-          <div class="muted small">${d.summary.simulators} ${esc(t("mobile.sim.devices"))} · ${d.summary.booted} ${esc(t("mobile.sim.booted"))}</div></div>
+        ${mac ? `<div class="card"><div>${esc(t("mobile.sim.title"))}</div><div>${esc(t("mobile.sim.runtimes"))}: ${d.xcode.runtimes.length}</div>
+          <div class="muted small">${d.summary.simulators} ${esc(t("mobile.sim.devices"))} · ${d.summary.booted} ${esc(t("mobile.sim.booted"))}</div></div>` : ""}
         <div class="card"><div>${esc(t("mobile.android.title"))}</div><div>${esc(d.android.platforms.length ? d.android.platforms[d.android.platforms.length - 1].replace("android-", "") : t("common.notFound"))}</div>
           <div class="muted small">${d.android.avds.length} AVD · ${d.android.build_tools.length} build-tools</div></div>
       </div>
 
-      <h2>${esc(t("mobile.xcode.title"))}</h2>
+      ${mac ? `<h2>${esc(t("mobile.xcode.title"))}</h2>
       ${xcodeCard(d.xcode)}
 
       <h2>${esc(t("mobile.sim.title"))}</h2>
-      ${simulatorCard(d.xcode)}
+      ${simulatorCard(d.xcode)}` : ""}
 
       <h2>${esc(t("mobile.flutter.title"))}</h2>
       ${flutterCard(d.flutter)}

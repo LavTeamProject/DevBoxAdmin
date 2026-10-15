@@ -13,6 +13,7 @@ import plistlib
 import re
 import shutil
 import subprocess
+import sys
 import time
 from http import HTTPStatus
 from concurrent.futures import ThreadPoolExecutor
@@ -28,7 +29,7 @@ _cache = {"t": 0.0, "data": None}
 # dan cara mendeteksinya. `name` = nama produk (tidak diterjemahkan),
 # `note` = kode catatan yang diterjemahkan UI (i18n), bukan prosa.
 
-PROFILES = [
+PROFILES_MAC = [
     {
         "id": "base",
         "icon": "homebrew",
@@ -148,10 +149,43 @@ PROFILES = [
     },
 ]
 
+# ---------------------------------------------------------------- detektor
+
+def _lp(pid_item, name, pkg, required=False, detect_pkg=None):
+    return {"id": pid_item, "name": name, "pkg": pkg, "type": "apt", "detect": ("dpkg", detect_pkg or pkg), "required": required}
+
+
+PROFILES_LINUX = [
+    {"id": "linux-base", "icon": "git", "items": [
+        _lp("git", "Git", "git", True), _lp("curl", "curl", "curl", True), _lp("build-essential", "Build tools (gcc, make)", "build-essential", True),
+        _lp("python3", "Python 3", "python3"), _lp("python3-venv", "Python venv", "python3-venv"), _lp("python3-pip", "pip", "python3-pip"),
+        _lp("jq", "jq", "jq"), _lp("ripgrep", "ripgrep", "ripgrep"), _lp("fzf", "fzf", "fzf"), _lp("gh", "GitHub CLI", "gh"),
+        _lp("unzip", "unzip", "unzip"), _lp("htop", "htop", "htop")]},
+    {"id": "linux-backend", "icon": "postgres", "items": [
+        _lp("sqlite3", "SQLite", "sqlite3"), _lp("redis", "Redis", "redis-server"), _lp("postgresql", "PostgreSQL", "postgresql"),
+        _lp("nginx", "nginx", "nginx"), _lp("nodejs", "Node.js (apt)", "nodejs"), _lp("npm", "npm", "npm")]},
+    {"id": "linux-flutter", "icon": "flutter", "items": [
+        _lp("git", "Git", "git", True), _lp("curl", "curl", "curl", True), _lp("unzip", "unzip", "unzip", True), _lp("xz-utils", "xz-utils", "xz-utils", True),
+        _lp("zip", "zip", "zip", True), _lp("jdk", "Java JDK (Android)", "default-jdk-headless"), _lp("clang", "clang", "clang"), _lp("cmake", "CMake", "cmake"),
+        _lp("ninja", "Ninja", "ninja-build"), _lp("pkg-config", "pkg-config", "pkg-config"), _lp("gtk3", "GTK 3 (Linux desktop builds)", "libgtk-3-dev"),
+        _lp("glu", "libglu1-mesa", "libglu1-mesa"),
+        {"id": "flutter", "name": "Flutter SDK", "pkg": "https://docs.flutter.dev/get-started/install/linux", "type": "manual", "detect": ("flutter",), "required": False,
+         "note": "manual"},
+        {"id": "android-sdk", "name": "Android SDK (command-line tools)", "pkg": "https://developer.android.com/studio#command-line-tools-only", "type": "manual",
+         "detect": ("android_sdk",), "required": False, "note": "manual"}]},
+    {"id": "linux-containers", "icon": "docker", "items": [
+        _lp("docker", "Docker Engine", "docker.io"), _lp("compose", "Docker Compose", "docker-compose-v2")]},
+]
+PROFILES = PROFILES_MAC if sys.platform == "darwin" else PROFILES_LINUX
 PROFILE_IDS = {p["id"] for p in PROFILES}
 
 
-# ---------------------------------------------------------------- detektor
+def _apt(item):
+    """Пакет apt установлен? Версия берётся из dpkg."""
+    code, out, _ = run(["dpkg-query", "-W", "-f", "${Status}\t${Version}", item], timeout=8)
+    ok = code == 0 and out.startswith("install ok installed")
+    return {"installed": ok, "version": out.split("\t", 1)[1] if ok and "\t" in out else None}
+
 
 def _which(cmd, extra=""):
     return shutil.which(cmd, path=ENV["PATH"] + ((":" + extra) if extra else ""))
@@ -307,6 +341,7 @@ DETECTORS = {
     "android_sdk": _android_sdk,
     "xcode": _xcode,
     "ios_runtimes": _ios_runtimes,
+    "dpkg": _apt,
 }
 
 
@@ -320,7 +355,7 @@ def _detect(spec):
         fn = DETECTORS.get(kind)
         if not fn:
             return {"installed": False}
-        return fn(args[0]) if kind == "app" else fn()
+        return fn(args[0]) if kind in ("app", "dpkg") else fn()
     except Exception as e:  # noqa: BLE001
         return {"installed": False, "error": str(e)}
 
@@ -341,7 +376,7 @@ def _install_kind(item):
     """brew | setup (мастер «Подготовка системы») | manual (нельзя из панели) | later (позже в плане)."""
     if item.get("install"):
         return item["install"]
-    return "brew" if item["type"] in ("formula", "cask") else "manual"
+    return "brew" if item["type"] in ("formula", "cask", "apt") else "manual"  # "brew" здесь = «ставится менеджером пакетов» (на Linux — apt)
 
 
 def catalog(q=None):
@@ -418,7 +453,11 @@ def plan(q):
             entry["action"] = kind  # setup | manual | later — из панели сейчас не ставится
         entries.append(entry)
     blocked = None
-    if any(e["action"] == "install" for e in entries):
+    if any(e["action"] == "install" for e in entries) and sys.platform != "darwin":
+        import platform_info
+        if not platform_info.has("pkg.apt"):
+            blocked = "needs_apt"
+    elif any(e["action"] == "install" for e in entries):
         if not has_clt():
             blocked = "needs_clt"
         elif not _brew_bin():
@@ -451,6 +490,34 @@ def _verify(planned, before_id, log):
         raise RuntimeError("не обнаружено после установки: " + ", ".join(missing))
 
 
+def _install_linux(todo, planned_profile):
+    """Linux: один вызов apt-get install для всех недостающих пакетов, с правами администратора (окно polkit или sudo в терминале)."""
+    import aptsvc
+    import elevate
+    import platform_info
+    pkgs = [e["pkg"] for e in todo]
+    ids = [e["id"] for e in todo]
+    if not all(aptsvc.APT_NAME.match(p) for p in pkgs):
+        raise ApiError("Недопустимое имя пакета", code="srv.pkg_invalid")
+    if not platform_info.has("elevation.gui"):  # без экрана пароль вводится только в терминале панели
+        return dict(elevate.run_admin("profile", ["apt-get", "install", "-y", *pkgs]), planned=ids)
+    ref = {"before": None}
+
+    def snapshot_before(log):
+        import snapshots
+        try:
+            ref["before"] = snapshots.create({"label": f"до: {planned_profile}"})["id"]
+            log(f"Снимок «до» сохранён: {ref['before']}")
+        except Exception as e:  # noqa: BLE001
+            log(f"(снимок «до» не сохранён: {e})")
+
+    planned = [dict(e, profile_name=planned_profile) for e in todo]
+    steps = [("Снимок «до»", snapshot_before, {}),
+             ("apt-get install (polkit спросит пароль)", ["pkexec", *elevate.admin_argv(["apt-get", "install", "-y", *pkgs])], {}),
+             ("Проверка и разница «до/после»", lambda log: _verify(planned, ref["before"], log), {})]
+    return {"job": start_steps(f"Профиль: {planned_profile}", steps, INSTALL_KIND), "planned": ids}
+
+
 def install(body):
     """Выполнить план профиля через start_steps. План пересобирается заново (идемпотентность)."""
     q = {"profile": body.get("profile"), "scope": body.get("scope") or "required",
@@ -462,7 +529,10 @@ def install(body):
     if not todo:
         raise ApiError("Нечего устанавливать: всё уже стоит или ставится вне панели", HTTPStatus.CONFLICT, code="prof.nothing")
     profile = _find_profile(pl["profile"])
-    pname = {"base": "Фундамент", "ai": "AI", "flutter": "Flutter", "ios": "iOS", "backend": "Backend"}.get(profile["id"], profile["id"])
+    pname = {"base": "Фундамент", "ai": "AI", "flutter": "Flutter", "ios": "iOS", "backend": "Backend", "linux-base": "Фундамент",
+             "linux-backend": "Backend", "linux-containers": "Контейнеры"}.get(profile["id"], profile["id"])
+    if sys.platform != "darwin":
+        return _install_linux(todo, planned_profile=pname)
     brew = _brew_bin()
     import setup  # локально: setup не зависит от profiles, но так импорт остаётся ленивым
     env = dict(ENV, NONINTERACTIVE="1", SUDO_ASKPASS=os.path.join(setup.DATA_DIR, "askpass.sh"))
@@ -508,12 +578,14 @@ def describe(q):
         kind = _install_kind(it)
         st = state[it["id"]]
         steps = []
-        if kind == "brew":
+        if kind == "brew" and sys.platform != "darwin":
+            steps.append(f"apt-get install -y {it['pkg']}")
+        elif kind == "brew":
             steps.append(f"brew install{' --cask' if it['type'] == 'cask' else ''} {it['pkg']}")
             steps += ["rustup default stable" for a in it.get("after", []) if a == "rustup-default-stable"]
         items.append({"id": it["id"], "name": it["name"], "package": it["pkg"], "type": it["type"], "install_via": kind,
                       "required": bool(it.get("required")), "depends_on": ITEM_DEPENDS.get(it["id"], []),
-                      "prerequisites": ["command_line_tools", "homebrew"] if kind == "brew" else [],
+                      "prerequisites": (["apt", "administrator_rights"] if sys.platform != "darwin" else ["command_line_tools", "homebrew"]) if kind == "brew" else [],
                       "steps": steps, "verify": {"detector": it["detect"][0], "target": it["detect"][1] if len(it["detect"]) > 1 else None},
                       "rollback": {"operation": "package.uninstall", "params": {"name": it["pkg"], "type": it["type"]}} if kind == "brew" else None,
                       "installed": st["installed"], "version": st.get("version")})
@@ -530,6 +602,7 @@ def describe(q):
         order.append(i["id"])
     for i in items:
         visit(i)
-    return {"profile": profile["id"], "requirements": {"os": f"macOS {MIN_MACOS}+", "arch": ["arm64", "x86_64"],
-                                                      "prerequisites": ["command_line_tools", "homebrew"]},
+    reqs = ({"os": f"macOS {MIN_MACOS}+", "arch": ["arm64", "x86_64"], "prerequisites": ["command_line_tools", "homebrew"]} if sys.platform == "darwin"
+            else {"os": "Debian/Ubuntu (apt)", "arch": ["aarch64", "x86_64"], "prerequisites": ["apt", "administrator_rights"]})
+    return {"profile": profile["id"], "requirements": reqs,
             "items": items, "install_order": order}

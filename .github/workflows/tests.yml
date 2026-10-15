@@ -1,0 +1,32 @@
+name: tests
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  unit:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm, ubuntu-22.04, macos-14]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compile all Python
+        run: python -m compileall -q *.py tests
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+      - name: Server imports and /api/platform answers
+        run: |
+          python - <<'PY'
+          import platform_info, json
+          print(json.dumps(platform_info.compute(), indent=1))
+          import server  # noqa: F401
+          PY
+      - name: JS syntax and i18n parity
+        run: |
+          for f in static/*.js; do node --check "$f"; done
+          node check-i18n.js

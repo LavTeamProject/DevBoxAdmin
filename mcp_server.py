@@ -15,8 +15,9 @@ import sys
 
 SUPPORTED = ["2025-06-18", "2025-03-26", "2024-11-05"]
 SERVER_INFO = {"name": "service-admin", "version": "1.0.0"}
-INSTRUCTIONS = ("Read-only access to this Mac's setup state through the Service Admin panel. Use inspect_system and "
-                "inspect_diagnostics first; tools never change the machine.")
+INSTRUCTIONS = ("Access to this computer's setup state through the Service Admin panel. Use inspect_system and inspect_diagnostics first. "
+                "Level L1 tools only read. At level L2/L3 you can PROPOSE a change (plan_changes); it runs only after a human approves it, "
+                "once, and then you check it with verify_plan. Never ask the human to type an administrator password anywhere except in their own terminal.")
 CONNECT_TIMEOUT = 5
 CALL_TIMEOUT = 120
 MAX_RESPONSE = 4 * 1024 * 1024

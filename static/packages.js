@@ -22,7 +22,7 @@ function svcActions(s, detail = true) {
 
 function svcStats(s) {
   if (s.running) {
-    return `<span>PID <code>${s.pid}</code></span><span>CPU ${s.cpu ?? "-"}%</span><span>RAM ${s.mem_mb ?? "-"} MB</span><span>Uptime ${esc(s.uptime ?? "-")}</span>`;
+    return `<span>PID <code>${s.pid ?? "–"}</code></span><span>CPU ${s.cpu ?? "-"}%</span><span>RAM ${s.mem_mb ?? "-"} MB</span><span>Uptime ${esc(s.uptime ?? "-")}</span>`;
   }
   return s.exit_code != null ? `<span>Exit code <code>${s.exit_code}</code></span>` : "";
 }

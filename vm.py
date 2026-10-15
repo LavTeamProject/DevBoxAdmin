@@ -16,6 +16,7 @@ import os
 import re
 import secrets
 import shutil
+import sys
 import subprocess
 import time
 from http import HTTPStatus
@@ -45,6 +46,47 @@ class Driver:
                 return vm
         raise ApiError("VM not found", HTTPStatus.NOT_FOUND, code="vm.not_found")
 
+    # --- операции (Фаза 6, Л4): драйвер сам знает, как клонировать/запускать/останавливать; vm.py и runner_spawn.py не знают про tart/qemu
+    shutdown_cmd = "sync; sudo -n /sbin/shutdown -h now"   # штатное выключение гостя по SSH
+    boot_timeout = 120      # сколько ждать SSH после запуска (QEMU без KVM — намного дольше)
+    ssh_probe_timeout = 15
+
+    def clone(self, src, dst):
+        raise NotImplementedError
+
+    def delete(self, name):
+        raise NotImplementedError
+
+    def rename(self, a, b):
+        raise NotImplementedError
+
+    def hard_stop(self, name):
+        raise NotImplementedError
+
+    def start_step(self, name, extra=()):
+        raise NotImplementedError
+
+    def isolation(self, source):
+        """Аргумент `extra` для start_step: сетевая изоляция гостя от локальной сети, кроме сервера CI источника."""
+        raise NotImplementedError
+
+    # шаги для start_steps: список argv (виден в журнале job) или callable(log)
+    def clone_step(self, src, dst):
+        return lambda log: self.clone(src, dst)
+
+    def copy_step(self, src, dst):
+        """Независимая копия (снимок/восстановление). По умолчанию — как клон (у tart клон APFS и так независим)."""
+        return self.clone_step(src, dst)
+
+    def delete_step(self, name):
+        def step(log):
+            if not self.delete(name):
+                raise RuntimeError(f"could not delete {name}")
+        return step
+
+    def stop_step(self, name):
+        return lambda log: self.hard_stop(name)
+
 
 class TartDriver(Driver):
     name = "tart"
@@ -62,6 +104,60 @@ class TartDriver(Driver):
             if code == 0 and re.match(r"^[0-9.]{7,15}$", out.strip()):
                 return out.strip()
         raise RuntimeError("the VM has no IP address yet")
+
+    def clone(self, src, dst):
+        r = subprocess.run([self.binary(), "clone", src, dst], capture_output=True, timeout=300)
+        if r.returncode:
+            raise RuntimeError("tart clone failed: " + r.stderr.decode("utf-8", "replace").strip()[:200])
+
+    def delete(self, name):
+        return subprocess.run([self.binary(), "delete", name], capture_output=True, timeout=300).returncode == 0
+
+    def rename(self, a, b):
+        r = subprocess.run([self.binary(), "rename", a, b], capture_output=True, timeout=120)
+        if r.returncode:
+            raise RuntimeError(f"rename failed: finish by hand: tart rename {a} {b}")
+
+    def hard_stop(self, name):
+        subprocess.run([self.binary(), "stop", name, "--timeout", "30"], capture_output=True, timeout=90)
+
+    def clone_step(self, src, dst):
+        return [self.binary(), "clone", src, dst]
+
+    def delete_step(self, name):
+        return [self.binary(), "delete", name]
+
+    def stop_step(self, name):
+        return [self.binary(), "stop", name]
+
+    def start_step(self, name, extra=()):
+        exe = self.binary()
+
+        def step(log):
+            os.makedirs(LOG_DIR, mode=0o700, exist_ok=True)
+            with open(os.path.join(LOG_DIR, name + ".log"), "ab") as logf:
+                subprocess.Popen([exe, "run", "--no-graphics", *extra, name], stdin=subprocess.DEVNULL, stdout=logf, stderr=logf,
+                                 start_new_session=True, env=core.ENV)
+            for _ in range(60):  # до 30 с ждём, что tart отметит ВМ запущенной
+                time.sleep(0.5)
+                if self.status(name)["running"]:
+                    log(f"{name}: running")
+                    return
+            raise RuntimeError("the VM did not reach the running state in 30 s; see " + os.path.join(LOG_DIR, name + ".log"))
+        return step
+
+    def isolation(self, source):
+        """softnet: наружу и в интернет можно, в частные сети — нет, кроме сервера CI. Адрес — IP или имя (имя резолвится на хосте, все IPv4 → /32)."""
+        import socket
+        from urllib.parse import urlsplit
+        u = urlsplit(source["url"])
+        host = u.hostname
+        try:
+            infos = socket.getaddrinfo(host, u.port or (443 if u.scheme == "https" else 80), socket.AF_INET, socket.SOCK_STREAM)
+        except OSError:
+            raise RuntimeError(f"cannot resolve the CI server host '{host}' for the network allow-list") from None
+        ips = sorted({i[4][0] for i in infos})
+        return ["--net-softnet", "--net-softnet-allow=" + ",".join(f"{ip}/32" for ip in ips)]
 
     def list(self):
         exe = self.binary()
@@ -81,11 +177,14 @@ class TartDriver(Driver):
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$")
 IMAGE_RE = re.compile(r"^ghcr\.io/cirruslabs/[a-z0-9][a-z0-9._-]{0,60}(:[A-Za-z0-9._-]{1,40})?$")
 LOG_DIR = os.path.join(core.DATA_DIR, "vm-logs")
-DRIVERS = {"tart": TartDriver()}
+DRIVERS = {"tart": TartDriver()} if sys.platform == "darwin" else {}
+if sys.platform != "darwin":
+    import vm_qemu  # noqa: E402 - нужен класс Driver, определённый выше
+    DRIVERS["qemu"] = vm_qemu.QemuDriver()
 
 
-def driver(name="tart"):
-    d = DRIVERS.get(name)
+def driver(name=None):
+    d = DRIVERS.get(name or next(iter(DRIVERS)))
     if not d:
         raise ApiError("Unknown VM driver", HTTPStatus.BAD_REQUEST, code="vm.driver")
     return d
@@ -96,6 +195,9 @@ def overview(q=None):
     out = []
     for name, d in DRIVERS.items():
         item = {"driver": name, "available": d.available(), "can": list(d.READ), "vms": []}
+        if name == "qemu":
+            item["missing"] = d.missing_packages() + ([] if _sshpass() else ["sshpass"])
+            item["accel"] = d.accel()
         if item["available"]:
             try:
                 item["vms"] = d.list()
@@ -109,6 +211,18 @@ def overview(q=None):
 
 
 # ---------------------------------------------------------------- изменения
+
+def install_deps(body=None):
+    """Linux: поставить недостающие пакеты QEMU (apt; окно администратора или команда для терминала панели)."""
+    import elevate
+    d = driver()
+    if d.name != "qemu":
+        raise ApiError("This is for Linux (QEMU)", HTTPStatus.CONFLICT, code="platform.unsupported")
+    pkgs = d.missing_packages() + ([] if _sshpass() else ["sshpass"])
+    if not pkgs:
+        raise ApiError("Everything is installed", HTTPStatus.CONFLICT, code="vm.deps_ok")
+    return elevate.run_admin("QEMU packages", ["apt-get", "install", "-y", *pkgs])
+
 
 def _bad(msg, code, status=HTTPStatus.BAD_REQUEST, **params):
     return ApiError(msg, status, code=code, **params)
@@ -162,11 +276,49 @@ def _sshpass():
     return shutil.which("sshpass", path=os.pathsep.join(TART_DIRS + (os.environ.get("PATH", ""),)))
 
 
+def wait_ssh(d, name):
+    """Ждёт, пока гость примет SSH (дедлайн — у драйвера); → адрес гостя."""
+    ip = None
+    deadline = time.monotonic() + d.boot_timeout
+    while time.monotonic() < deadline:
+        try:
+            ip = ip or d.ip(name)
+            if _guest(ip, "true", timeout=d.ssh_probe_timeout)[0] == 0:
+                return ip
+        except Exception:  # noqa: BLE001 - IP ещё нет / ssh не отвечает
+            pass
+        time.sleep(2)
+    raise RuntimeError(f"the VM did not accept SSH in {int(d.boot_timeout // 60)} minutes (is SSH enabled and the guest password right?)")
+
+
+CREDS = {}   # "адрес" -> (пользователь, пароль): драйвер регистрирует при выдаче адреса гостя; по умолчанию — образ cirruslabs admin/admin
+
+
+def _target(ip):
+    """"1.2.3.4" или "127.0.0.1:2222" → (ssh-аргументы порта, user@host, пароль)."""
+    ent = CREDS.get(ip, (GUEST_USER, "admin"))
+    user, pw = ent[0], ent[1]
+    host, _, port = ip.partition(":")
+    return (["-p", port] if port else []), f"{user}@{host}", pw
+
+
+def ssh_cmd(ip):
+    """→ (argv-префикс до команды в госте, окружение). Пароль (tart) — через sshpass -e; ВМ QEMU — по ключу с закреплённым ключом хоста."""
+    port, dest, pw = _target(ip)
+    ent = CREDS.get(ip)
+    if ent and len(ent) > 2 and ent[2]:
+        k = ent[2]
+        opts = ["-o", "StrictHostKeyChecking=yes", "-o", f"UserKnownHostsFile={k['known_hosts']}", "-o", f"HostKeyAlias={k['alias']}", "-o", "LogLevel=ERROR",
+                "-o", "ConnectTimeout=10", "-o", "PasswordAuthentication=no", "-o", "IdentitiesOnly=yes", "-i", k["key"]]
+        return [shutil.which("ssh") or "/usr/bin/ssh", *opts, *port, dest], dict(core.ENV)
+    return [_sshpass(), "-e", "ssh", *SSH_OPTS, *port, dest], dict(core.ENV, SSHPASS=pw)
+
+
 def _guest(ip, *remote, stdin=None, timeout=120):
     """Команда в госте через ssh (пароль — в окружении, не в argv). Возвращает (код, вывод).
     Код 255 (обрыв соединения сразу после загрузки гостя) повторяется до 3 раз — только для команд без stdin."""
-    env = dict(core.ENV, SSHPASS="admin")
-    cmd = [_sshpass(), "-e", "ssh", *SSH_OPTS, f"{GUEST_USER}@{ip}", *remote]
+    prefix, env = ssh_cmd(ip)
+    cmd = [*prefix, *remote]
     for attempt in range(3):
         p = subprocess.run(cmd, stdin=stdin if stdin is not None else subprocess.DEVNULL, capture_output=True, env=env, timeout=timeout)
         if p.returncode != 255 or stdin is not None:
@@ -193,10 +345,10 @@ def _file_hashes(path):
 
 def _stream_tar_to_guest(src, ip):
     """tar на хосте → ssh → tar в госте, потоком (без загрузки дерева в память); проверяются оба кода возврата."""
-    env = dict(core.ENV, SSHPASS="admin")
-    tar = subprocess.Popen(["/usr/bin/tar", "-C", src, "-cf", "-", "."], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    prefix, env = ssh_cmd(ip)
+    tar = subprocess.Popen([shutil.which("tar") or "/usr/bin/tar", "-C", src, "-cf", "-", "."], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
-        ssh = subprocess.run([_sshpass(), "-e", "ssh", *SSH_OPTS, f"{GUEST_USER}@{ip}", f"tar -xf - -C ~/{GUEST_DIR}"], stdin=tar.stdout,
+        ssh = subprocess.run([*prefix, f"tar -xf - -C ~/{GUEST_DIR}"], stdin=tar.stdout,
                              capture_output=True, env=env, timeout=600)
     finally:
         tar.stdout.close()
@@ -212,25 +364,26 @@ def _stream_tar_to_guest(src, ip):
 def _stop_vm(exe, name, log, ip=None):
     """Остановить ВМ и убедиться, что она остановилась; ошибка остановки не должна скрывать исходную ошибку.
     С известным ip сначала штатное выключение гостя (sync + shutdown): жёсткая остановка теряла свежезаписанные файлы."""
+    d = driver()
     if ip:
         try:
-            _guest(ip, "sync; sudo -n /sbin/shutdown -h now", timeout=20)
+            _guest(ip, d.shutdown_cmd, timeout=20)
         except Exception:  # noqa: BLE001 - ssh обрывается вместе с гостем
             pass
         for _ in range(30):
             try:
-                if not driver().status(name)["running"]:
+                if not d.status(name)["running"]:
                     return
             except Exception:  # noqa: BLE001
                 break
             time.sleep(1)
     for attempt in range(2):
         try:
-            subprocess.run([exe, "stop", name, "--timeout", "30"], capture_output=True, timeout=90)
+            d.hard_stop(name)
         except Exception as e:  # noqa: BLE001
             log(f"stop attempt {attempt + 1} failed: {e}")
         try:
-            if not driver().status(name)["running"]:
+            if not d.status(name)["running"]:
                 return
         except Exception:  # noqa: BLE001
             pass
@@ -255,24 +408,14 @@ def _prepare_runner(exe, name, provider_id):
         log(f"runner {inst[-1]['version']}: {count} files")
         try:
             _start_detached(exe, name)(log)
-            deadline = time.monotonic() + 120
-            while time.monotonic() < deadline:  # ждём IP и SSH не дольше 2 минут
-                try:
-                    ip = ip or d.ip(name)
-                    if _guest(ip, "true", timeout=15)[0] == 0:
-                        break
-                except Exception:  # noqa: BLE001 - ip ещё нет / ssh не отвечает
-                    pass
-                time.sleep(2)
-            else:
-                raise RuntimeError("the VM did not accept SSH in 2 minutes (is SSH enabled and the guest password 'admin'?)")
+            ip = wait_ssh(d, name)
             code, out = _guest(ip, f"rm -rf ~/{GUEST_DIR} && mkdir -p ~/{GUEST_DIR}")
             if code:
                 raise RuntimeError("cannot prepare the guest folder: " + out[:200])
             log("copying files into the VM…")
             _stream_tar_to_guest(src, ip)
             # сверка: sha256 КАЖДОГО файла (shasum из macOS), список сравнивается с хостовым
-            code, out = _guest(ip, f"cd ~/{GUEST_DIR} && find . -type f -exec shasum -a 256 {{}} +", timeout=600)
+            code, out = _guest(ip, f"cd ~/{GUEST_DIR} && if command -v sha256sum >/dev/null 2>&1; then find . -type f -exec sha256sum {{}} +; else find . -type f -exec shasum -a 256 {{}} +; fi", timeout=600)
             if code:
                 raise RuntimeError("verification failed: " + out[:200])
             guest = {}
@@ -299,29 +442,21 @@ def softnet_ready():
 
 
 def _start_detached(exe, name, extra=()):
-    def step(log):
-        os.makedirs(LOG_DIR, mode=0o700, exist_ok=True)
-        with open(os.path.join(LOG_DIR, name + ".log"), "ab") as logf:
-            subprocess.Popen([exe, "run", "--no-graphics", *extra, name], stdin=subprocess.DEVNULL, stdout=logf, stderr=logf,
-                             start_new_session=True, env=core.ENV)
-        for _ in range(60):  # до 30 с ждём, что tart отметит ВМ запущенной
-            time.sleep(0.5)
-            if driver().status(name)["running"]:
-                log(f"{name}: running")
-                return
-        raise RuntimeError("the VM did not reach the running state in 30 s; see " + os.path.join(LOG_DIR, name + ".log"))
-    return step
+    return driver().start_step(name, extra)
 
 
 def _restore_swap(exe, name, tmp):
     def step(log):
         d = driver()
         if d.status(name)["running"]:  # ВМ могли запустить между проверкой и этим шагом
-            subprocess.run([exe, "delete", tmp], capture_output=True, timeout=120)
+            d.delete(tmp)
             raise RuntimeError(f"the VM '{name}' was started meanwhile; the restore was cancelled and nothing was changed")
-        r = subprocess.run([exe, "delete", name], capture_output=True, timeout=300)
-        if r.returncode:
-            subprocess.run([exe, "delete", tmp], capture_output=True, timeout=120)
+        try:
+            deleted = d.delete(name)
+        except RuntimeError:
+            deleted = False
+        if not deleted:
+            d.delete(tmp)
             raise RuntimeError("could not delete the current VM; the restore was cancelled and nothing was changed")
         log(f"deleted the current VM '{name}'")
     return step
@@ -329,9 +464,10 @@ def _restore_swap(exe, name, tmp):
 
 def _restore_rename(exe, name, tmp):
     def step(log):
-        r = subprocess.run([exe, "rename", tmp, name], capture_output=True, timeout=120)
-        if r.returncode:
-            raise RuntimeError(f"rename failed: the restored copy is kept as '{tmp}'; finish by hand: tart rename {tmp} {name}")
+        try:
+            driver().rename(tmp, name)
+        except RuntimeError:
+            raise RuntimeError(f"rename failed: the restored copy is kept as '{tmp}'; finish by hand: rename {tmp} to {name}") from None
         log(f"restored '{name}' from the snapshot")
     return step
 
@@ -340,8 +476,8 @@ def build(op, params):
     """(label, kind, steps) — ничего не запускает. Все проверки состояния здесь."""
     d = driver()
     exe = d.binary()
-    if not exe:
-        raise FileNotFoundError("tart")
+    if not exe and op != "vm.create_base":
+        raise FileNotFoundError(d.name)
     if not isinstance(params, dict):
         raise _bad("Bad request", "vm.bad_name")
     if op == "vm.prepare_runner":
@@ -365,12 +501,32 @@ def build(op, params):
         if not _sshpass():
             raise _bad("sshpass is required on the host to reach the VM", "vm.no_sshpass", HTTPStatus.CONFLICT)
         return (f"VM {v['name']}: recipe {recipe}", "vm", [(vm_recipes.RECIPES[recipe]["title"], vm_recipes.step(exe, v["name"], recipe), {})])
+    if op == "vm.create_base":
+        if d.name != "qemu":
+            raise _bad("Building a base VM is for Linux (QEMU); on macOS use vm.pull", "vm.driver")
+        _free_name(d, params.get("name"))
+        size = params.get("size_gb", 20)
+        if not isinstance(size, int) or isinstance(size, bool) or not 10 <= size <= 200:
+            raise _bad("Disk size: 10-200 GB", "vm.bad_size")
+        mem = params.get("mem_mb", 4096)
+        if not isinstance(mem, int) or isinstance(mem, bool) or not 512 <= mem <= 65536:
+            raise _bad("Memory: 512-65536 MB", "vm.bad_mem")
+        miss = d.missing_packages()
+        if miss:
+            raise _bad("QEMU packages are missing: " + " ".join(miss), "vm.qemu_missing", HTTPStatus.CONFLICT, packages=" ".join(miss))
+        import vm_qemu as _q
+        os.makedirs(os.path.dirname(_q.ROOT), exist_ok=True)
+        if shutil.disk_usage(os.path.dirname(_q.ROOT)).free < 4e9:  # qcow2 разреженный: сразу нужны образ (~0,7 ГБ) и немного под систему
+            raise _bad("Not enough free disk space for the base VM", "vm.disk", HTTPStatus.CONFLICT)
+        return (f"VM create base {params['name']} (Ubuntu)", "vm", [("download image, first boot with cloud-init", d.create_base_step(params["name"], size, mem_mb=mem), {})])
     if op == "vm.clone":
         _local(d, params.get("source"))
         _free_name(d, params.get("name"))
         return (f"VM clone {params['source']} → {params['name']}", "vm",
-                [("tart clone", [exe, "clone", params["source"], params["name"]], {})])
+                [(f"{d.name} clone", d.clone_step(params["source"], params["name"]), {})])
     if op == "vm.pull":
+        if d.name != "tart":
+            raise _bad("Image download works only with tart; on Linux build a base VM instead", "vm.driver")
         image = params.get("image")
         if not isinstance(image, str) or not IMAGE_RE.match(image):
             raise _bad("Only images from ghcr.io/cirruslabs/ are allowed", "vm.bad_image")
@@ -379,22 +535,22 @@ def build(op, params):
             raise _bad("Type the new VM name to confirm the download", "vm.confirm")
         if shutil.disk_usage("/").free < 60e9:
             raise _bad("At least 60 GB of free disk space is needed for an image", "vm.disk", HTTPStatus.CONFLICT)
-        return (f"VM pull {image} → {params['name']}", "vm", [("tart clone (download)", [exe, "clone", image, params["name"]], {})])
+        return (f"VM pull {image} → {params['name']}", "vm", [("tart clone (download)", d.clone_step(image, params["name"]), {})])
     name = params.get("name")
     v = _local(d, name)
     if op == "vm.start":
         if v["running"]:
             raise _bad("The VM is already running", "vm.running", HTTPStatus.CONFLICT)
-        return (f"VM start {name}", "vm", [("tart run --no-graphics", _start_detached(exe, name), {})])
+        return (f"VM start {name}", "vm", [(f"{d.name} start", d.start_step(name), {})])
     if op == "vm.stop":
         if not v["running"]:
             raise _bad("The VM is not running", "vm.not_running", HTTPStatus.CONFLICT)
-        return (f"VM stop {name}", "vm", [("tart stop", [exe, "stop", name], {})])
+        return (f"VM stop {name}", "vm", [(f"{d.name} stop", d.stop_step(name), {})])
     if op in ("vm.snapshot", "vm.delete") and v["running"]:
         raise _bad("Stop the VM first", "vm.running", HTTPStatus.CONFLICT)
     if op == "vm.snapshot":
         snap = snapshot_name(name)
-        return (f"VM snapshot {name} → {snap}", "vm", [("tart clone (snapshot)", [exe, "clone", name, snap], {})])
+        return (f"VM snapshot {name} → {snap}", "vm", [(f"{d.name} copy (snapshot)", d.copy_step(name, snap), {})])
     if op == "vm.restore":
         snap = params.get("snapshot")
         sv = _local(d, snap)
@@ -407,13 +563,13 @@ def build(op, params):
             raise _bad("Type the exact VM name to confirm the restore", "vm.confirm")
         tmp = f"{name[:12]}-restoring-{secrets.token_hex(4)}"
         return (f"VM restore {name} ← {snap}", "vm",
-                [("tart clone (copy of the snapshot)", [exe, "clone", snap, tmp], {}),
-                 ("tart delete (current VM)", _restore_swap(exe, name, tmp), {}),
-                 ("tart rename", _restore_rename(exe, name, tmp), {})])
+                [(f"{d.name} copy (of the snapshot)", d.copy_step(snap, tmp), {}),
+                 (f"{d.name} delete (current VM)", _restore_swap(exe, name, tmp), {}),
+                 (f"{d.name} rename", _restore_rename(exe, name, tmp), {})])
     if op == "vm.delete":
         if params.get("confirm") != name:
             raise _bad("Type the exact VM name to confirm deletion", "vm.confirm")
-        return (f"VM delete {name}", "vm", [("tart delete", [exe, "delete", name], {})])
+        return (f"VM delete {name}", "vm", [(f"{d.name} delete", d.delete_step(name), {})])
     raise _bad("Unknown VM operation", "vm.unknown_op")
 
 

@@ -11,6 +11,7 @@ import os
 import re
 import shlex
 import shutil
+import sys
 import tempfile
 import time
 from http import HTTPStatus
@@ -276,8 +277,32 @@ def read_file(q):
             or not os.path.exists(os.path.dirname(item["path"]))}
 
 
+def _admin_write_linux(src, dest):
+    """Linux: с графической сессией — окно polkit (pkexec); без экрана панель не принимает пароль — оставляет подготовленный файл и даёт команду для терминала."""
+    import platform_info
+    if platform_info.has("elevation.gui"):
+        sh = f"mkdir -p -- {shlex.quote(os.path.dirname(dest))} && cp -- {shlex.quote(src)} {shlex.quote(dest)} && chmod 644 -- {shlex.quote(dest)}"
+        code, out, err = run(["pkexec", "/bin/sh", "-c", sh], timeout=300)
+        if code in (126, 127):
+            raise ApiError("Отменено: пароль администратора не введён.", code="files.admin_cancelled")
+        if code != 0:
+            raise ApiError(err.strip() or "Не удалось записать от имени администратора", HTTPStatus.INTERNAL_SERVER_ERROR,
+                           code=None if err.strip() else "files.admin_write_failed")
+        return
+    staged_dir = os.path.join(DATA_DIR, "staged")
+    os.makedirs(staged_dir, mode=0o700, exist_ok=True)
+    os.chmod(staged_dir, 0o700)
+    fd, staged = tempfile.mkstemp(prefix=(os.path.basename(dest) or "file") + ".", dir=staged_dir)  # уникальное имя, O_EXCL, 0600
+    with os.fdopen(fd, "wb") as out, open(src, "rb") as inp:
+        shutil.copyfileobj(inp, out)
+    raise ApiError("Нужны права администратора: выполните в терминале панели команду", HTTPStatus.CONFLICT, code="files.admin_terminal",
+                   command=f"/usr/bin/sudo -k -- install -D -m 644 -- {shlex.quote(staged)} {shlex.quote(dest)} && rm -f -- {shlex.quote(staged)}")
+
+
 def admin_write(src, dest, flush_dns):
     """Salin file sebagai root lewat dialog password admin macOS."""
+    if sys.platform != "darwin":
+        return _admin_write_linux(src, dest)
     cmd = f"mkdir -p {shlex.quote(os.path.dirname(dest))} && cp {shlex.quote(src)} {shlex.quote(dest)} && chmod 644 {shlex.quote(dest)}"
     if flush_dns:
         cmd += " && dscacheutil -flushcache && killall -HUP mDNSResponder"

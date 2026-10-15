@@ -19,7 +19,8 @@ from core import DATA_DIR, ENV, ApiError, clt_stub, has_clt, run, start_steps
 BREW_CANDIDATES = ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]
 BREW_INSTALLER_URL = "https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh"
 CLT_WAIT_SECONDS = 45 * 60
-INSTALLABLE = ("clt", "homebrew")
+INSTALLABLE = ("clt", "homebrew", "toolchain")
+LINUX_PACKAGES = ["build-essential", "git", "curl"]
 # Измерено в ВМ (macOS 26.6): диалог Apple отказал — «нужно 24,27 ГБ, доступно 18,53 ГБ». Это предупреждение,
 # а не запрет: точное требование зависит от версии macOS, мы знаем его по одному случаю.
 CLT_LOW_DISK_GB = 26
@@ -29,9 +30,10 @@ def runtime_info(q=None):
     """Interpreter yang menjalankan panel: bawaan panel (~/.service-admin/runtime) atau bukan."""
     bundled_root = os.path.realpath(os.path.join(DATA_DIR, "runtime", "python"))
     exe = os.path.realpath(sys.executable)
+    packaged = os.path.realpath(__file__).startswith("/opt/service-admin/")   # пакет .deb: код в /opt/service-admin на системном Python — это штатно
     return {"python": sys.executable,
             "version": "%d.%d.%d" % sys.version_info[:3],
-            "bundled": exe == bundled_root or exe.startswith(bundled_root + os.sep)}
+            "bundled": exe == bundled_root or exe.startswith(bundled_root + os.sep), "packaged": packaged}
 
 
 def _brew_path():
@@ -46,7 +48,29 @@ def _git():
     return {"installed": True, "path": path, "version": out.strip().removeprefix("git version ")}
 
 
+def _status_linux():
+    import platform_info
+    gcc, make = shutil.which("gcc", path=ENV["PATH"]), shutil.which("make", path=ENV["PATH"])
+    git = _git()
+    rt = runtime_info()
+    ok = bool(gcc and make)
+    can = (not ok or not git["installed"]) and platform_info.has("pkg.apt")
+    items = [
+        {"id": "toolchain", "installed": ok and git["installed"], "path": gcc, "mode": "apt", "can_install": can, "blocked_by": None,
+         "gui_elevation": platform_info.has("elevation.gui")},
+        {"id": "git", "installed": git["installed"], "path": git.get("path"), "version": git.get("version"), "mode": "with_toolchain",
+         "can_install": False, "blocked_by": None if git["installed"] else "toolchain"},
+        {"id": "python", "installed": True, "version": rt["version"], "path": rt["python"],
+         "mode": "bundled" if rt["bundled"] else "system", "packaged": rt["packaged"], "can_install": False, "blocked_by": None, "informational": True},
+    ]
+    required = [i for i in items if not i.get("informational")]
+    return {"items": items, "ready": all(i["installed"] for i in required),
+            "missing": [i["id"] for i in required if not i["installed"]], "runtime": rt, "platform": "linux"}
+
+
 def status(q=None):
+    if sys.platform.startswith("linux"):
+        return _status_linux()
     clt = has_clt()
     brew = _brew_path()
     git = _git()
@@ -119,10 +143,25 @@ def _verify_brew(log):
     log(out.strip().splitlines()[0] if out.strip() else "brew ok")
 
 
+def _install_linux(what):
+    import elevate
+    import platform_info
+    if what != "toolchain" or not platform_info.has("pkg.apt"):
+        raise ApiError("Этот пункт недоступен на этой системе", HTTPStatus.CONFLICT, code="platform.unsupported")
+    cmd = ["apt-get", "install", "-y", *LINUX_PACKAGES]
+    if platform_info.has("elevation.gui"):  # графическая сессия: системное окно polkit спросит пароль
+        steps = [("apt-get install (polkit спросит пароль)", ["pkexec", *elevate.admin_argv(cmd)], {})]
+        return {"job": start_steps("Build tools (apt)", steps, "setup")}
+    # без экрана пароль можно ввести только в терминале: панель не принимает и не хранит пароль администратора
+    return elevate.run_admin("Build tools", cmd)
+
+
 def install(body):
     what = body.get("id")
     if what not in INSTALLABLE:
         raise ApiError("Неизвестный пункт подготовки", HTTPStatus.BAD_REQUEST, code="setup.unknown_item")
+    if what == "toolchain" or sys.platform.startswith("linux"):
+        return _install_linux(what)
     st = {i["id"]: i for i in status()["items"]}[what]
     if st["installed"]:
         raise ApiError("Уже установлено", HTTPStatus.CONFLICT, code="setup.installed")

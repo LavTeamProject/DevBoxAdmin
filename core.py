@@ -6,6 +6,7 @@ import os
 import re
 import shlex
 import shutil
+import sys
 import subprocess
 import threading
 import time
@@ -14,6 +15,11 @@ from http import HTTPStatus
 
 HOME = os.path.expanduser("~")
 DATA_DIR = os.path.join(HOME, ".service-admin")
+try:  # данные панели (журналы, токены, состояние) — только владельцу: домашние каталоги Debian/Ubuntu по умолчанию читаются другими пользователями
+    os.makedirs(DATA_DIR, mode=0o700, exist_ok=True)
+    os.chmod(DATA_DIR, 0o700)
+except OSError:
+    pass
 SHIM_DIR = os.path.join(DATA_DIR, "bin")
 ENV_FILE = os.path.join(DATA_DIR, "env.zsh")
 BACKUP_DIR = os.path.join(DATA_DIR, "backups")
@@ -56,7 +62,10 @@ _CLT_CACHE = {"t": 0.0, "ok": None}
 
 
 def has_clt():
-    """Command Line Tools (atau Xcode penuh) terpasang. Di-cache beberapa detik."""
+    """Command Line Tools (atau Xcode penuh) terpasang. Di-cache beberapa detik.
+    Linux: «инструменты разработчика готовы» = есть git (стабов Apple там нет)."""
+    if sys.platform != "darwin":
+        return shutil.which("git", path=ENV["PATH"]) is not None
     now = time.time()
     if _CLT_CACHE["ok"] is None or now - _CLT_CACHE["t"] > 3:
         try:
@@ -70,7 +79,7 @@ def has_clt():
 
 def clt_stub(cmd0, env=None):
     """True kalau cmd0 adalah stub /usr/bin yang akan membuka dialog CLT (CLT belum terpasang)."""
-    if not cmd0:
+    if not cmd0 or sys.platform != "darwin":  # стабы /usr/bin, открывающие диалог CLT, бывают только на macOS
         return False
     path = cmd0 if "/" in cmd0 else shutil.which(cmd0, path=(env or ENV)["PATH"])
     return bool(path) and os.path.dirname(path) == "/usr/bin" and os.path.basename(path) in CLT_SHIMS \
@@ -373,16 +382,27 @@ def backup(name):
     return os.path.basename(dest)
 
 
+def shell_name():
+    """Оболочка пользователя: macOS — zsh; Linux — $SHELL, если это zsh/bash, иначе bash."""
+    if sys.platform == "darwin":
+        return "zsh"
+    return "zsh" if os.path.basename(os.environ.get("SHELL", "")) == "zsh" and shutil.which("zsh") else "bash"
+
+
+def shell_rc():
+    return ".zshrc" if shell_name() == "zsh" else ".bashrc"
+
+
 def ensure_zshrc_block():
     """Pastikan blok Service Admin ada di PALING BAWAH .zshrc supaya
     menang dari baris PATH lain (mis. yang disuntik Herd)."""
-    path = os.path.join(HOME, ".zshrc")
-    content = read_home(".zshrc")
+    path = os.path.join(HOME, shell_rc())
+    content = read_home(shell_rc())
     stripped = re.sub(r"\n*# >>> mac-service-admin >>>.*?# <<< mac-service-admin <<<\n?", "\n",
                       content, flags=re.S).rstrip("\n")
     new = stripped + "\n\n" + ZSHRC_BLOCK
     if new != content:
-        backup(".zshrc")
+        backup(shell_rc())
         with open(path, "w") as f:
             f.write(new)
 
@@ -439,7 +459,7 @@ def shell_probe(names):
     script = "; ".join(f'echo "__{n}__$(command -v {shlex.quote(n)})"' for n in names)
     script += '; echo "__ENV_JAVA_HOME__${JAVA_HOME}"'
     try:
-        _, out, _ = run(["zsh", "-i", "-c", script], timeout=20)
+        _, out, _ = run([shell_name(), "-i", "-c", script], timeout=20)
     except subprocess.TimeoutExpired:
         return {}
     result = {}
@@ -453,6 +473,14 @@ def shell_probe(names):
 def notify(title, text):
     """Уведомление macOS (центр уведомлений) — без диалога и без ожидания. Текст передаётся аргументами osascript (не подставляется в скрипт).
     Возвращает True, если команда отработала; любая ошибка (нет графического сеанса, запрет уведомлений) молча игнорируется."""
+    if sys.platform != "darwin":
+        exe = shutil.which("notify-send", path=ENV["PATH"])
+        if not exe:
+            return False
+        try:
+            return subprocess.run([exe, "--", str(title)[:80], str(text)[:240]], capture_output=True, timeout=10).returncode == 0
+        except (OSError, subprocess.TimeoutExpired):
+            return False
     script = "on run argv\n display notification (item 1 of argv) with title (item 2 of argv)\nend run"
     try:
         r = subprocess.run(["/usr/bin/osascript", "-e", script, str(text)[:240], str(title)[:80]], capture_output=True, timeout=10)

@@ -14,6 +14,7 @@
 """
 import os
 import shutil
+import sys
 import threading
 import time
 from http import HTTPStatus
@@ -87,7 +88,12 @@ REQUIREMENTS = {
     "cocoapods": (lambda: _cached("pod", lambda: _tool("pod")), "CocoaPods must be installed"),
     "android_sdk": (lambda: _cached("android", _android), "The Android SDK command-line tools must be installed"),
     "gh": (_gh, "GitHub CLI (gh) must be installed"),
-    "tart": (lambda: __import__("vm").driver().available(), "tart (VM hypervisor driver) must be installed"),
+    "tart": (lambda: __import__("vm").driver().available(), "A VM hypervisor driver must be installed (tart on macOS; QEMU on Linux)"),
+    "admin_rights": (lambda: __import__("platform_info").is_macos() or __import__("platform_info").has("elevation.gui"),
+                     "Administrator rights are needed: this operation requires a graphical session with polkit (pkexec); otherwise run the command in the panel terminal by hand"),
+    "macos": (lambda: __import__("platform_info").is_macos(), "This operation works only on macOS"),
+    "systemd": (lambda: __import__("platform_info").has("service.systemd"), "systemd must be available"),
+    "apt": (lambda: __import__("platform_info").has("pkg.apt"), "apt must be available"),
 }
 
 
@@ -139,8 +145,21 @@ def _pkg_schema():
                          "type": {"type": "string", "enum": ["formula", "cask"]}}, ["name", "type"])
 
 
+_LINUX = sys.platform != "darwin"
+PKG_REQUIRES = ("apt", "admin_rights") if _LINUX else ("homebrew", "clt")   # менеджер пакетов платформы (Фаза 6, Л5)
+
+
 def package_state(kind, name):
-    """{installed, version} через `brew list` — быстрая проверка состояния до/после."""
+    """{installed, version} через `brew list` (macOS) или dpkg (Linux) — быстрая проверка состояния до/после."""
+    if _LINUX:
+        import aptsvc
+        if kind != "formula":
+            raise ApiError("Casks do not exist on Linux", code="platform.unsupported")
+        if not aptsvc.APT_NAME.match(name or ""):  # те же правила, что и при исполнении: план и исполнение не расходятся
+            raise ApiError("Недопустимое имя пакета", code="srv.pkg_invalid")
+        code, out, _ = run(["dpkg-query", "-W", "-f", "${Status}\t${Version}", name], timeout=30)
+        ok = code == 0 and out.startswith("install ok installed")
+        return {"installed": ok, "version": out.split("\t", 1)[1] if ok and "\t" in out else None}
     code, out, _ = run([BREW, "list", f"--{kind}", "--versions", name], timeout=60)
     line = out.strip().splitlines()[0] if code == 0 and out.strip() else ""
     parts = line.split()
@@ -148,11 +167,25 @@ def package_state(kind, name):
 
 
 def run_package(action, kind, name):
-    """Единственное место, где собирается и запускается `brew <action> --<kind> <name>` (job kind «brew»)."""
+    """Единственное место, где собирается и запускается `brew <action> --<kind> <name>` (job kind «brew»). Linux: apt через aptsvc (с правами администратора)."""
+    if _LINUX:
+        import aptsvc
+        if kind != "formula":
+            raise ApiError("Casks do not exist on Linux", code="platform.unsupported")
+        r = aptsvc.app_action({"name": name, "action": action})
+        if "job" not in r:  # без экрана пароль можно ввести только в терминале — агентам такой путь закрыт требованием admin_rights
+            raise ApiError("An administrator terminal is needed for this command", code="platform.needs_terminal", command=r.get("terminal", ""))
+        return r
     return {"job": start_job(f"brew {action} {name}", [BREW, action, f"--{kind}", name], "brew")}
 
 
 def run_upgrade_all():
+    if _LINUX:
+        import aptsvc
+        r = aptsvc.app_action({"action": "upgrade-all"})
+        if "job" not in r:
+            raise ApiError("An administrator terminal is needed for this command", code="platform.needs_terminal", command=r.get("terminal", ""))
+        return r
     return {"job": start_job("brew upgrade (все)", [BREW, "upgrade"], "brew")}
 
 
@@ -160,7 +193,7 @@ def _package_plan(action):
     def plan(p):
         st = package_state(p["type"], p["name"])
         skip = (action == "install" and st["installed"]) or (action == "uninstall" and not st["installed"])
-        return {"state_before": st, "would_run": f"brew {action} --{p['type']} {p['name']}", "will_change": not skip,
+        return {"state_before": st, "would_run": (("apt-get " + " ".join(__import__("aptsvc").ACTIONS[action]) + " " + p["name"]) if _LINUX else f"brew {action} --{p['type']} {p['name']}"), "will_change": not skip,
                 "noop_reason": ("already installed" if action == "install" else "not installed") if skip else None}
     return plan
 
@@ -173,21 +206,24 @@ def _package_verify(action):
     return verify
 
 
+_PM = "apt" if _LINUX else "Homebrew"
+_PKG = "package" if _LINUX else "formula or cask"
+_A = "an" if _LINUX else "a"
 for _action, _title, _level, _summary in (
-        ("install", "Install a Homebrew package", "L2", "Install one Homebrew formula or cask."),
-        ("upgrade", "Upgrade a Homebrew package", "L2", "Upgrade one installed Homebrew formula or cask."),
-        ("reinstall", "Reinstall a Homebrew package", "L2", "Reinstall one Homebrew formula or cask."),
-        ("uninstall", "Uninstall a Homebrew package", "L3", "Remove one Homebrew formula or cask (its data folders are left alone).")):
-    _register(f"package.{_action}", _title, _summary, _level, "package", _pkg_schema(), requires=("homebrew", "clt"),
+        ("install", f"Install {_A} {_PM} package", "L2", f"Install one {_PM} {_PKG}."),
+        ("upgrade", f"Upgrade {_A} {_PM} package", "L2", f"Upgrade one installed {_PM} {_PKG}."),
+        ("reinstall", f"Reinstall {_A} {_PM} package", "L2", f"Reinstall one {_PM} {_PKG}."),
+        ("uninstall", f"Uninstall {_A} {_PM} package", "L3", f"Remove one {_PM} {_PKG} (its data folders are left alone).")):
+    _register(f"package.{_action}", _title, _summary, _level, "package", _pkg_schema(), requires=PKG_REQUIRES,
               idempotent=_action in ("install", "uninstall"),
               rollback={"install": "package.uninstall", "uninstall": "package.install", "upgrade": None, "reinstall": None}[_action],
-              verify=f"brew list shows the package {'absent' if _action == 'uninstall' else 'installed'}",
+              verify=f"{'dpkg' if _LINUX else 'brew list'} shows the package {'absent' if _action == 'uninstall' else 'installed'}",
               plan=_package_plan(_action),
               execute=(lambda a: lambda p: run_package(a, p["type"], p["name"]))(_action),
               verify_fn=_package_verify(_action))
-_register("package.upgrade_all", "Upgrade all Homebrew packages", "Run `brew upgrade` for every outdated package.", "L2", "package",
-          requires=("homebrew", "clt"), idempotent=True, verify="no outdated packages remain",
-          plan=lambda p: {"would_run": "brew upgrade", "will_change": True}, execute=lambda p: run_upgrade_all())
+_register("package.upgrade_all", f"Upgrade all {_PM} packages", ("Run `apt-get upgrade`." if _LINUX else "Run `brew upgrade` for every outdated package."), "L2", "package",
+          requires=PKG_REQUIRES, idempotent=True, verify="no outdated packages remain",
+          plan=lambda p: {"would_run": ("apt-get upgrade -y" if _LINUX else "brew upgrade"), "will_change": True}, execute=lambda p: run_upgrade_all())
 
 
 # -- профили установки (profiles.py), снимки, копии, запуски
@@ -213,6 +249,12 @@ def _profile_plan(p):
             "not_installable_here": [e["id"] for e in pl["items"] if e["action"] in ("setup", "manual", "later")], "blocked_by": pl["blocked"]}
 
 
+def _no_terminal(r):
+    if isinstance(r, dict) and "terminal" in r and "job" not in r:  # Linux без графической сессии: пароль можно ввести только в терминале человека
+        raise ApiError("An administrator terminal is needed for this command; it was not run", code="platform.needs_terminal", command=r["terminal"])
+    return r
+
+
 def _profile_verify(p):
     import profiles
     q = {"profile": p["profile"], "scope": p.get("scope") or "required", "items": ",".join(p.get("items") or [])}
@@ -221,10 +263,10 @@ def _profile_verify(p):
 
 
 _register("profile.install", "Install an install profile", "Install the missing Homebrew-based tools of a profile (skips what is installed).", "L2",
-          "profile", _profile_schema(), requires=("homebrew", "clt", "disk_10gb"), idempotent=True,
+          "profile", _profile_schema(), requires=(PKG_REQUIRES + ("disk_10gb",)), idempotent=True,
           rollback="package.uninstall for each installed item", verify="the profile plan shows nothing left to install",
-          plan=_profile_plan, execute=lambda p: __import__("profiles").install(
-              {"profile": p["profile"], "scope": p.get("scope") or "required", "items": p.get("items") or []}), verify_fn=_profile_verify)
+          plan=_profile_plan, execute=lambda p: _no_terminal(__import__("profiles").install(
+              {"profile": p["profile"], "scope": p.get("scope") or "required", "items": p.get("items") or []})), verify_fn=_profile_verify)
 _register("snapshot.create", "Take an environment snapshot", "Record installed packages, runtimes, Xcode, Flutter/Android and profile status into a snapshot file.",
           "L2", "snapshot", opschema.obj({"label": {"type": "string", "maxLength": 80}}), idempotent=False,
           rollback="delete the snapshot in the panel", verify="the snapshot file exists",
@@ -427,13 +469,15 @@ _VM = [  # id, level, title, summary, props, required
     ("vm.clone", "L2", "Clone a VM", "Local copy of an existing VM (cheap APFS clone)", {"source": _VMN, "name": _VMN}, ["source", "name"]),
     ("vm.pull", "L3", "Download a VM image", "Download a macOS image from ghcr.io/cirruslabs/ (tens of GB); the new VM name is typed to confirm",
      {"image": {"type": "string", "maxLength": 120}, "name": _VMN, "confirm": _confirm()}, ["image", "name", "confirm"]),
+    ("vm.create_base", "L2", "Build a base VM (Linux)", "Download the official Ubuntu cloud image (sha256-verified) and prepare a base VM with QEMU; Linux only",
+     {"name": _VMN, "size_gb": {"type": "integer", "minimum": 10, "maximum": 200}, "mem_mb": {"type": "integer", "minimum": 512, "maximum": 65536}}, ["name"]),
     ("vm.start", "L2", "Start a VM", "tart run --no-graphics; no host folders are shared", {"name": _VMN}, ["name"]),
     ("vm.stop", "L2", "Stop a VM", "tart stop", {"name": _VMN}, ["name"]),
     ("vm.snapshot", "L2", "Snapshot a VM", "Copy of a stopped VM named <name>-snap-<time> (tart has no snapshots; this is a clone)", {"name": _VMN}, ["name"]),
     ("vm.prepare_runner", "L2", "Put CI runner files into a VM", "Copy the installed runner files into a STOPPED base VM over SSH (guest account admin, NAT network) and verify them; the runner is not registered",
      {"name": _VMN, "provider": {"type": "string", "enum": ["github", "gitea"]}}, ["name", "provider"]),
     ("vm.recipe", "L2", "Prepare a VM with a recipe", "Start a STOPPED local VM, install one tool inside it over SSH (recipes: node = official Node.js LTS, clt = Command Line Tools), stop it again. Nothing Apple-ID-bound",
-     {"name": _VMN, "recipe": {"type": "string", "enum": ["node", "clt"]}}, ["name", "recipe"]),
+     {"name": _VMN, "recipe": {"type": "string", "enum": ["node", "clt", "build"]}}, ["name", "recipe"]),
     ("vm.restore", "L4", "Restore a VM from a snapshot", "Replace a STOPPED VM by a copy of its snapshot <name>-snap-<time>: everything done in the VM since is lost; the exact VM name is typed to confirm",
      {"name": _VMN, "snapshot": _VMN, "confirm": _confirm()}, ["name", "snapshot", "confirm"]),
     ("vm.delete", "L4", "Delete a VM", "tart delete: the VM and its disk are gone; the exact VM name is typed to confirm", {"name": _VMN, "confirm": _confirm()}, ["name", "confirm"]),
@@ -471,3 +515,14 @@ _register("runner.selftest", "Self-test a CI source end to end", "Create a test 
 
 # Операции над системой (службы, PHP/Herd/Node, Docker, файлы) — отдельным модулем, регистрируются в этот же каталог
 import ops_system  # noqa: E402,F401
+
+
+def _platform_requirements():
+    """Операции, привязанные к macOS, получают requirement `macos`: на Linux они отказывают понятно, а не падают (Фаза 6, Л0)."""
+    for op in OPS.values():
+        if (op["group"] in ("sim", "xcode", "pod") or op["id"].startswith("herd.") or op["id"] in ("docker.engine_start", "docker.engine_stop")) \
+                and "macos" not in op["requires"]:
+            op["requires"].append("macos")
+
+
+_platform_requirements()
