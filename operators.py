@@ -20,7 +20,14 @@ import audit
 from core import DATA_DIR, ApiError
 
 OPERATORS_FILE = os.path.join(DATA_DIR, "operators.json")
-NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._-]{0,39}$")   # только ASCII: омоглифы («Аlice» с кириллической А) не должны выдавать себя за другого оператора в диалогах
+NAME_RE = re.compile(r"^[A-Za-z\u0410-\u044f\u0401\u04510-9][A-Za-z\u0410-\u044f\u0401\u04510-9 ._-]{0,39}$")   # латиница ИЛИ кириллица, цифры, пробел . _ -
+LATIN, CYRILLIC = re.compile(r"[A-Za-z]"), re.compile(r"[\u0410-\u044f\u0401\u0451]")
+
+
+def _check_name(name):
+    """Имя — латиница или кириллица, но не смесь в одном имени: «Аlice» с кириллической «А» выглядела бы как «Alice» в диалогах подтверждения."""
+    if not NAME_RE.match(name) or (LATIN.search(name) and CYRILLIC.search(name)):
+        raise ApiError("Имя оператора: 1–40 символов, буквы только латинские ИЛИ только русские (не вперемешку), цифры, пробел, . _ -", code="op.name_invalid")
 SCOPES = ("read", "approve")
 MAX_OPERATORS = 20
 TOKEN_PREFIX = "sao_"
@@ -151,8 +158,7 @@ def _check_chat(chat):
 def create(body):
     """POST {name, scopes?, expires_days?, telegram_chat_id?} → оператор. Токен и секрет TOTP возвращаются ОДИН раз."""
     name = (body.get("name") or "").strip()
-    if not NAME_RE.match(name):
-        raise ApiError("Имя оператора: 1–40 символов (буквы, цифры, пробел, . _ -)", code="op.name_invalid")
+    _check_name(name)
     scopes = _check_scopes(body.get("scopes", ["read"]))
     days = body.get("expires_days")
     if days is not None and (not isinstance(days, int) or isinstance(days, bool) or not 1 <= days <= 365):

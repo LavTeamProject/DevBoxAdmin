@@ -372,3 +372,8 @@ span.lang-logo { display: inline-flex; align-items: center; justify-content: cen
 
 .report-link { background: none; border: 0; padding: 8px 10px 0; text-align: left; cursor: pointer; text-decoration: underline; }
 .report-link:hover { color: var(--text); }
+
+/* Подключение агентов: варианты в мастерах */
+label.opt { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; margin: 6px 0; cursor: pointer; }
+label.opt:has(input:checked) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+label.opt input { margin-top: 3px; }

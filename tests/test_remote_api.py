@@ -193,10 +193,13 @@ class Operators(Base):
         [t.join() for t in threads]
         self.assertEqual(res.count(True), 1)
 
-    def test_names_are_ascii_only(self):
-        for bad in ("\u0410lice", "Al\u0456ce", "\u200balice", "al\nice"):
-            with self.assertRaises(core.ApiError, msg=repr(bad)):
+    def test_names_latin_or_cyrillic_but_never_mixed(self):
+        for bad in ("\u0410lice", "Al\u0456ce", "\u200balice", "al\nice", "\u0410lex\u0435y", "x" * 41):
+            with self.assertRaises(core.ApiError, msg=repr(bad)) as c:
                 ops.create({"name": bad})
+            self.assertEqual(c.exception.code, "op.name_invalid")
+        for good in ("alice", "Alice 2", "\u0410\u043b\u0435\u043a\u0441\u0435\u0439", "\u0411\u043e\u0442", "\u0439\u0446", "\u041d\u043e\u0432\u044b\u0439 1"):
+            ops.create({"name": good})
 
     def test_granting_approve_reissues_credentials(self):
         op, token, secret = self.operator("viewer", scopes=("read",))
@@ -809,6 +812,14 @@ class Telegram(Base):
         p = self.plan(self.agent_rec)
         self.msg(4242, f"/approve {p['id']} {p['digest'][:12]} {ops.totp_now(self.secret)}")
         self.assertIn("заблокировано", self.sent[-1][1])
+
+    def test_unbound_chats_are_offered_to_the_wizard_until_bound(self):
+        telegram_bot._SEEN.clear()
+        telegram_bot._handle_update("T", {"update_id": 1, "message": {"chat": {"id": 999, "type": "private", "first_name": "Ivan"}, "text": "hi"}})
+        self.assertEqual(telegram_bot.status()["unbound_chats"], [{"chat_id": 999, "name": "Ivan"}])
+        self.assertNotIn("4242", json.dumps(telegram_bot.status()["unbound_chats"]))           # привязанный чат не предлагается
+        remote_api.op_create({"name": "boss", "scopes": ["read"], "telegram_chat_id": 999})
+        self.assertEqual(telegram_bot.status()["unbound_chats"], [])
 
     def test_notification_and_plans_show_the_parameters(self):
         p = self.plan(self.agent_rec)

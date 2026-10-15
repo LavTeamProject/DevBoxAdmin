@@ -88,7 +88,7 @@ def _snippets(agent_id, name):
     cmd = [py, mcp, "--agent", agent_id]
     quoted = " ".join(json.dumps(c) if " " in c else c for c in cmd)
     return {"claude_code": f"claude mcp add service-admin -- {quoted}",
-            "json": json.dumps({"mcpServers": {"service-admin": {"command": cmd[0], "args": cmd[1:]}}}, indent=2)}
+            "json": json.dumps({"mcpServers": {"service-admin": {"command": cmd[0], "args": cmd[1:]}}}, indent=2, ensure_ascii=False)}
 
 
 def register(body):

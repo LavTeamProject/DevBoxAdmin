@@ -31,6 +31,8 @@ _THREADS = []
 _STATE = {"username": None, "error": None, "running": False}
 _NOTIFIED = set()
 _STRANGERS = {}
+_SEEN = {}                 # chat_id -> {"name", "ts"}: чаты, писавшие боту, но не привязанные к оператору (только в памяти; мастер предлагает привязать)
+SEEN_TTL = 1800
 
 
 def _token():
@@ -56,10 +58,16 @@ def _call(token, method, params=None, timeout=35):
 
 
 def _send(token, chat_id, text):
+    """Отправка сообщения. Сбой не прячем: он виден на странице (поле error) и в аудите — иначе «бот молчит» не отличить от «нет сообщений»."""
     try:
-        _call(token, "sendMessage", {"chat_id": chat_id, "text": text[:MAX_TEXT], "disable_web_page_preview": True}, timeout=20)
-    except (OSError, ValueError):
-        pass
+        r = _call(token, "sendMessage", {"chat_id": chat_id, "text": text[:MAX_TEXT], "disable_web_page_preview": True}, timeout=20)
+        if not r.get("ok"):
+            raise ValueError((r.get("description") or "error")[:80])
+        return True
+    except Exception as e:  # noqa: BLE001
+        _STATE["error"] = f"send: {str(e)[:80]}"
+        audit.record("telegram:send_failed", {"chat_id": chat_id}, f"error: {str(e)[:80]}")
+        return False
 
 
 # ---------------------------------------------------------------- команды (чистые функции: текст → ответ; тестируются без сети)
@@ -124,6 +132,9 @@ def _handle_update(token, upd):
     op = operators.by_chat(chat["id"])
     if not op or "read" not in (op.get("scopes") or []) and "approve" not in (op.get("scopes") or []):
         now = time.time()
+        if len(_SEEN) > 50:
+            _SEEN.clear()
+        _SEEN[chat["id"]] = {"name": (chat.get("first_name") or chat.get("username") or "")[:40], "ts": now}
         if now - _STRANGERS.get(chat["id"], 0) > 3600:      # на чужие чаты отвечаем один раз в час и ничего не раскрываем
             if len(_STRANGERS) > 1000:
                 _STRANGERS.clear()
@@ -247,8 +258,11 @@ def apply():
 # ---------------------------------------------------------------- управление из панели (localhost)
 
 def status(q=None):
+    now = time.time()
+    chats = [{"chat_id": c, "name": v["name"]} for c, v in sorted(_SEEN.items(), key=lambda kv: -kv[1]["ts"]) if now - v["ts"] < SEEN_TTL][:5]
+    chats = [c for c in chats if not operators.by_chat(c["chat_id"])]       # уже привязанные не предлагаем
     return {"enabled": remote_api.settings()["telegram"]["enabled"], "token_set": bool(_token()), "running": _STATE["running"],
-            "username": _STATE["username"], "error": _STATE["error"]}
+            "username": _STATE["username"], "error": _STATE["error"], "unbound_chats": chats}
 
 
 def set_settings(body):
