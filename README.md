@@ -29,6 +29,17 @@ and lets AI agents (Claude Code, Codex, …) work on the machine **only through 
 
 ## Install
 
+One command (needs only `curl` and `tar`, which macOS has):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/LavTeamProject/DevBoxAdmin/main/get.sh | zsh
+```
+
+It downloads the sources to `~/.service-admin/app` and runs `install.sh`; running it again updates the panel (your data in `~/.service-admin` is kept).
+To pin a version, set `SA_REF=<tag or commit>` (and optionally `SA_SHA256=<archive checksum>`). Prefer to read the script first? Open [`get.sh`](get.sh) — it is short.
+
+Or manually:
+
 ```bash
 git clone https://github.com/LavTeamProject/DevBoxAdmin.git ~/service-admin
 cd ~/service-admin

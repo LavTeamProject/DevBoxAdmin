@@ -18,6 +18,17 @@ Agent Control API для ИИ-агентов (уровни L1–L3, планы �
 
 ## Установка
 
+Одной командой (нужны только `curl` и `tar`, они есть в macOS):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/LavTeamProject/DevBoxAdmin/main/get.sh | zsh
+```
+
+Скрипт скачает исходники в `~/.service-admin/app` и запустит `install.sh`; повторный запуск обновляет панель (данные в `~/.service-admin` не трогаются).
+Чтобы закрепить версию: `SA_REF=<тег или коммит>` (и, по желанию, `SA_SHA256=<сумма архива>`). Скрипт короткий, его можно прочитать заранее: [`get.sh`](get.sh).
+
+Или вручную:
+
 ```bash
 git clone https://github.com/LavTeamProject/DevBoxAdmin.git ~/service-admin
 cd ~/service-admin
