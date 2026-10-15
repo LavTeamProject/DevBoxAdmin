@@ -68,4 +68,4 @@ Format: **what** — why it was not verified — **how you can help**.
 
 - Owner's HTTPS Gitea 1.27.2: read-only check only — an org-scope source was added with an access token and "Check" returned the user and the runner list (1). Self-test and on-demand runner were NOT run on this server (owner's decision: "Check only").
 
-- `get.sh` (one-command install): download / unpack / checksum check / refusal on a wrong checksum or a bad `SA_REF` were tested locally on a `git archive` tarball (no install). The full chain through `raw.githubusercontent.com` + `codeload.github.com` followed by `install.sh` from `~/.service-admin/app` has not been run — the script was not on GitHub yet.
+- `get.sh` (one-command install): download / unpack / checksum check / refusal on a wrong checksum or a bad `SA_REF` were tested locally on a `git archive` tarball (no install). **The full chain was verified in a clean VM (macOS 26.6, vanilla):** `curl … | zsh` from GitHub → sources in `~/.service-admin/app` → `install.sh` (its own Python 3.12, app in /Applications, LaunchAgent) → the panel answers 200 on `127.0.0.1:8765`.
