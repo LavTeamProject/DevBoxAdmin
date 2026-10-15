@@ -17,6 +17,7 @@ import platform
 import re
 import secrets
 import shutil
+import socket
 import threading
 import time
 from http import HTTPStatus
@@ -609,3 +610,71 @@ def handle(req):
         outcome, resp = f"error: {e}", _err("internal", str(e)[:200])
     audit.record(f"agent:{name}", params, outcome, (time.time() - t0) * 1000, extra={"agent": agent["name"], "agent_id": agent["id"]})
     return resp
+
+
+# ---------------------------------------------------------------- удалённое подключение (Фаза 8, шаг 1: SSH)
+ID_RE = re.compile(r"^a[0-9a-f]{6}$")
+PUBKEY_RE = re.compile(r"^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(?:256|384|521)|sk-ssh-ed25519@openssh\.com) [A-Za-z0-9+/=]{20,800}(?: [\w.@+-]{1,64})?$")
+
+
+def _lan_hosts():
+    """Имена/адреса, по которым эту машину можно найти. Пакеты не отправляются (UDP connect лишь выбирает маршрут)."""
+    out = []
+    name = socket.gethostname()
+    if name:
+        out.append(name)
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("192.0.2.1", 9))
+        out.append(s.getsockname()[0])
+        s.close()
+    except OSError:
+        pass
+    return [h for i, h in enumerate(out) if h and not h.startswith("127.") and h not in out[:i]]
+
+
+def _ssh_listening():
+    try:
+        with socket.create_connection(("127.0.0.1", 22), timeout=1):
+            return True
+    except OSError:
+        return False
+
+
+def authorized_line(agent_id, public_key):
+    """Строка для ~/.ssh/authorized_keys: ключ может ТОЛЬКО запустить мост MCP этого агента (без оболочки, пробросов портов и сокетов).
+    Секрет агента остаётся на этой машине. → строка или ApiError."""
+    from setup import runtime_info
+    if not ID_RE.match(agent_id or ""):
+        raise ApiError("Неверный id агента", code="gw.remote_id")
+    key = " ".join((public_key or "").split())
+    if not PUBKEY_RE.match(key):
+        raise ApiError("Это не похоже на ОДНУ публичную строку ключа SSH (ssh-ed25519 AAAA… комментарий)", code="gw.remote_key")
+    py = runtime_info()["python"]
+    mcp = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mcp_server.py")
+    if any(c in py + mcp for c in '"\\\n\r\0'):
+        raise ApiError("Путь установки содержит недопустимые символы для authorized_keys", code="gw.remote_path")
+    return f'command="{py} {mcp} --agent {agent_id}",restrict {key}'
+
+
+def remote_info(q=None):
+    """GET /api/agent-gateway/remote[?agent=<id>&key=<публичный ключ>] → типы удалённых подключений и готовые команды. Ничего не меняет."""
+    import getpass
+    q = q or {}
+    user = getpass.getuser()
+    hosts = _lan_hosts()
+    ssh = {"user": user, "hosts": hosts, "listening": _ssh_listening(), "os": "macos" if platform.system() == "Darwin" else "linux"}
+    agent_id = q.get("agent") or ""
+    if agent_id:
+        if not any(a["id"] == agent_id and not a.get("revoked") for a in _load()["agents"]):
+            raise ApiError("Агент не найден", HTTPStatus.NOT_FOUND, code="gw.not_found")
+        host = hosts[0] if hosts else "<адрес-сервера>"
+        keyfile = f"~/.ssh/service-admin-{agent_id}"
+        ssh["agent"] = agent_id
+        ssh["steps"] = {"keygen": f"ssh-keygen -t ed25519 -N '' -f {keyfile}",
+                        "claude": f"claude mcp add service-admin -- ssh -i {keyfile} -o IdentitiesOnly=yes -o BatchMode=yes {user}@{host}",
+                        "json": json.dumps({"mcpServers": {"service-admin": {"command": "ssh", "args": ["-i", keyfile.replace("~", "$HOME"), "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes", f"{user}@{host}"]}}}, indent=2)}
+        if q.get("key"):
+            ssh["authorized_line"] = authorized_line(agent_id, q["key"])
+    return {"types": [{"id": "ssh", "status": "available" if ssh["listening"] else "needs_sshd"},
+                      {"id": "api", "status": "planned"}, {"id": "telegram", "status": "planned"}], "ssh": ssh}

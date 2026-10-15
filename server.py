@@ -93,6 +93,7 @@ GET_ROUTES = {
     "/api/operations": operations.catalog,
     "/api/plans": plans.list_plans,
     "/api/agent-gateway": agent_gateway.list_agents,
+    "/api/agent-gateway/remote": agent_gateway.remote_info,
     "/api/backups": backups.status,
     "/api/vms": vm.overview,
     "/api/runners": runners.status,

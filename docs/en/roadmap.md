@@ -870,6 +870,29 @@ The list is mandatory under principle №5: everything that is not done from the
 
 ---
 
+## Phase 8 — Remote control of the panel (✅ step 1 SSH done; ⬜ client API and Telegram — at the owner's decision)
+
+The owner's request: the panel runs on a server and can be controlled **from another machine**: over SSH, from Telegram, and through an **API client** (so that your own app/chatbot can be built). Today the panel listens only on `127.0.0.1` and agents use only a local Unix socket ("Out of scope": exposing it to the network is a separate decision). This phase is that decision; it is not implemented until approved.
+
+**Two roles that must not be mixed.**
+- **Agent** (AI client): gateway tools by level L1–L3; changes only as a plan approved by a **human**.
+- **Operator** (a human in an app/bot): sees state and audit, **approves or rejects plans**, stops jobs. This is stronger than an agent, so the protection is stricter; the operator's approval must not share the agent's channel (an agent cannot approve its own plan in any way).
+
+**Channels (rising in risk and work):**
+1. **SSH (≈ 2–3 days).** The panel stays on localhost; `ssh -L` forwards the socket/port; a ready command and MCP config on the "Agent connections" page, the `service-admin` CLI over ssh. Almost no new code; checked on two VMs (panel apart, agent apart).
+2. **Client API (≈ 1–2 weeks).** Versioned `/agent/v1` and `/operator/v1`: a token per client with scopes, TLS mandatory (or only behind a tunnel/reverse proxy), an allow-list of addresses, limits, revocation, audit with `by=remote:<client>`, a switch in settings (off by default). Described in OpenAPI; a sample app/SDK.
+3. **Telegram bot (≈ 1 week after item 2).** The bot **polls Telegram over an outgoing connection** (no inbound port); only the owner's `chat_id` list is allowed; plan approval is a button in the chat **plus** a one-time code shown on the panel/its window (so a stolen Telegram account cannot approve by itself); the bot token is in a 0600 file. Messages pass through Telegram's servers — no secrets in them, only a short plan description.
+
+**Required before implementation:** a threat model and an independent security review; layer-A tests for remote calls; a layer-B run with the agent on another machine; a note in `docs/unverified.md`. On-screen dialogs on the server stay the default channel; remote approval is an explicit setting that weakens protection, like "button in the panel".
+
+**Owner decisions (2026-10-15):** Telegram is acceptable as a channel — the user supplies **their own** bot; enabling access from the internet, the home network or a VPN is up to **the user**, and the panel itself offers the connection types (the "Remote connection" block on the "Agent connections" page); start with SSH.
+
+**Step 1 (SSH) — done, the scheme changed after checking on VMs.** The `ssh -L` tunnel proved unsafe: a key with `restrict,port-forwarding` still runs commands on the server and forwards the panel's HTTP-API port (the owner's full API). Adopted: a **forced command** in `authorized_keys` — `command="<python> mcp_server.py --agent <id>",restrict <key>`. The key can only start the MCP bridge of one agent: no shell, no forwarding (TCP or Unix socket), any requested command is ignored, the agent's secret never leaves the server (nothing to copy). The client connects with `claude mcp add service-admin -- ssh -i <key> -o IdentitiesOnly=yes -o BatchMode=yes user@host`. The panel builds the `authorized_keys` line from a pasted public key (strict format check) and does not edit the file itself. Verified on two machines: the server with the panel (a VM) and a client (a Mac): 10 L1 tools, `plan_changes` refused, `touch /tmp/PWNED` did not run, TCP/Unix forwarding does not work, no pty. Tests: `tests/test_remote_ssh.py`.
+
+**Questions for the owner (still open):** (2) one operator or several per panel (the "operator" role = a human approving plans from an app/bot)? (5) next step: the client API or Telegram?
+
+---
+
 ## 🚫 Out of scope (deliberately)
 
 - **Exposing the panel to the network.** Only through an SSH tunnel. If the bind is ever widened, that is a separate

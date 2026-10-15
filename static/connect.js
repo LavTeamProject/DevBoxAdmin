@@ -7,11 +7,22 @@ tabs.connect = {
   ops: null,     // /api/operations (каталог операций)
   plans: null,   // /api/plans (очередь подтверждений и история)
   interval: 5000,
+  remote: null,  // /api/agent-gateway/remote (типы удалённого подключения; Фаза 8)
+  remoteAgent: "", remoteKey: "", remoteErr: "",
   fresh: null,   // результат последней регистрации (команда и конфиг для копирования)
   async load(silent) {
-    try { this.data = await api("/api/agent-gateway"); this.ops = await api("/api/operations").catch(() => null); this.plans = await api("/api/plans").catch(() => null); }
+    try { this.data = await api("/api/agent-gateway"); this.ops = await api("/api/operations").catch(() => null); this.plans = await api("/api/plans").catch(() => null); await this.loadRemote(); }
     catch (e) { if (!silent) return failView(e); return; }
     this.render();
+  },
+
+  async loadRemote() {
+    const q = this.remoteAgent ? `?agent=${encodeURIComponent(this.remoteAgent)}${this.remoteKey ? `&key=${encodeURIComponent(this.remoteKey)}` : ""}` : "";
+    try { this.remote = await api("/api/agent-gateway/remote" + q); this.remoteErr = ""; }
+    catch (e) {
+      this.remoteErr = e.message;
+      if (this.remoteKey) { this.remoteKey = ""; this.remote = await api("/api/agent-gateway/remote" + (this.remoteAgent ? `?agent=${encodeURIComponent(this.remoteAgent)}` : "")).catch(() => this.remote); }
+    }
   },
 
   render() {
@@ -56,6 +67,7 @@ tabs.connect = {
         <select name="level"><option value="L1">L1 · ${esc(t("gw.lvl.L1"))}</option><option value="L2">L2 · ${esc(t("gw.lvl.L2"))}</option><option value="L3">L3 · ${esc(t("gw.lvl.L3"))}</option></select>
         <select name="expires"><option value="">${esc(t("gw.noExpiry"))}</option><option value="30">30 ${esc(t("gw.days"))}</option><option value="90">90 ${esc(t("gw.days"))}</option><option value="365">365 ${esc(t("gw.days"))}</option></select>
         <button type="submit" class="primary">${esc(t("gw.register"))}</button></form>
+      ${remoteSection(this)}
       <h2>${esc(t("gw.agents"))}</h2>
       ${d.agents.length ? `<div class="card"><div class="table-wrap"><table>
         <thead><tr><th>${esc(t("gw.col.agent"))}</th><th>${esc(t("gw.col.level"))}</th><th>${esc(t("audit.col.result"))}</th><th>${esc(t("gw.col.created"))}</th><th>${esc(t("gw.col.expires"))}</th><th>${esc(t("gw.col.seen"))}</th><th class="num">${esc(t("gw.col.calls"))}</th><th></th></tr></thead>
@@ -178,3 +190,47 @@ handlers.gwCopy = async (d) => {
   try { await navigator.clipboard.writeText(d.what === "claude" ? f.claude_code : f.json); toast(t("gw.copied")); }
   catch { toast(t("gw.copyFailed"), true); }
 };
+
+// ---- Удалённое подключение (Фаза 8, шаг 1: SSH). Панель ничего не открывает в сеть: ключ SSH умеет только запускать мост MCP одного агента.
+function remoteSection(tab) {
+  const r = tab.remote;
+  if (!r) return "";
+  const ssh = r.ssh, agents = (tab.data?.agents || []).filter((a) => !a.revoked);
+  const card = (id, body, cls = "") => `<div class="card" style="margin-bottom:8px;${cls}"><div class="name">${esc(t("gw.remote.type." + id))}</div>${body}</div>`;
+  const pre = (txt, what) => `<pre class="diff" style="white-space:pre-wrap">${esc(txt)}</pre>${btn(t("gw.copy"), "gwRemoteCopy", { what })}`;
+  const st = ssh.steps;
+  const sshBody = `<p class="muted small">${esc(t("gw.remote.ssh.intro"))}</p>
+    ${r.types[0].status === "available" ? "" : `<div class="warn small">${esc(t(ssh.os === "macos" ? "gw.remote.ssh.needsMac" : "gw.remote.ssh.needsLinux"))}</div>`}
+    <div class="row" style="gap:8px;flex-wrap:wrap;margin:8px 0"><label class="small">${esc(t("gw.remote.agent"))}
+      <select id="gwRemoteAgent"><option value="">—</option>${agents.map((a) => `<option value="${esc(a.id)}" ${a.id === tab.remoteAgent ? "selected" : ""}>${esc(a.name)} (${esc(a.level)})</option>`).join("")}</select></label></div>
+    ${st ? `<div class="small"><b>1.</b> ${esc(t("gw.remote.step1"))}</div>${pre(st.keygen, "keygen")}
+      <div class="small"><b>2.</b> ${esc(t("gw.remote.step2"))}</div>
+      <textarea id="gwRemoteKey" rows="2" style="width:100%;font-family:monospace" placeholder="ssh-ed25519 AAAA… comment">${esc(tab.remoteKey)}</textarea>
+      <div class="row" style="gap:8px;margin:6px 0">${btn(t("gw.remote.build"), "gwRemoteBuild", {}, "primary")}</div>
+      ${tab.remoteErr ? `<div class="warn small">${esc(tab.remoteErr)}</div>` : ""}
+      ${ssh.authorized_line ? `<div class="muted small">${esc(t("gw.remote.step2b", { user: ssh.user }))}</div>${pre(ssh.authorized_line, "authline")}` : ""}
+      <div class="small"><b>3.</b> ${esc(t("gw.remote.step3"))}</div>${pre(st.claude, "claude")}
+      <div class="muted small">${esc(t("gw.remote.jsonCfg"))}</div>${pre(st.json, "json")}
+      <p class="muted small">${esc(t("gw.remote.safe"))}</p>` : `<p class="muted small">${esc(t("gw.remote.pick"))}</p>`}`;
+  const soon = (id) => `<p class="muted small">${esc(t("gw.remote." + id + ".intro"))}</p><span class="badge gray">${esc(t("gw.remote.soon"))}</span>`;
+  return `<h2>${esc(t("gw.remote.title"))}</h2>
+    <div class="muted small" style="margin-bottom:8px">${esc(t("gw.remote.intro", { hosts: ssh.hosts.join(", ") || "—" }))}</div>
+    ${card("ssh", sshBody)}${card("api", soon("api"))}${card("telegram", soon("telegram"))}`;
+}
+handlers.gwRemoteBuild = async () => {
+  const tab = tabs.connect;
+  tab.remoteKey = ($("gwRemoteKey")?.value || "").trim();
+  await tab.loadRemote();
+  tab.render();
+};
+handlers.gwRemoteCopy = async (d) => {
+  const ssh = tabs.connect.remote?.ssh, st = ssh?.steps || {};
+  const txt = { keygen: st.keygen, claude: st.claude, json: st.json, authline: ssh?.authorized_line }[d.what];
+  try { await navigator.clipboard.writeText(txt || ""); toast(t("gw.copied")); } catch { toast(t("gw.copyFailed"), true); }
+};
+document.addEventListener("change", async (ev) => {
+  if (ev.target.id !== "gwRemoteAgent") return;
+  const tab = tabs.connect;
+  tab.remoteAgent = ev.target.value; tab.remoteKey = ""; tab.remoteErr = "";
+  await tab.loadRemote(); tab.render();
+});

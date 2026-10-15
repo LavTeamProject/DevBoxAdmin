@@ -9,6 +9,7 @@
 | [ci-runners.md](ci-runners.md) | CI-раннеры по требованию в одноразовых ВМ (Gitea/Forgejo, GitHub): токен доступа, самотест, агент L3 |
 | [install-linux.md](install-linux.md) | Установка на **Linux** (Ubuntu/Debian): одна команда или `.deb`, служба systemd, подготовка системы, профили, пакеты и службы — со скриншотами |
 | [connect-ai-agent-linux.md](connect-ai-agent-linux.md) | ИИ-агент на Linux: как человек подтверждает действия (окно или `service-admin approve`), когда канал отключается |
+| [connect-ai-agent-remote.md](connect-ai-agent-remote.md) | Удалённый агент по SSH: ограниченный ключ запускает только мост MCP одного агента |
 | [ci-runners-linux.md](ci-runners-linux.md) | CI-раннеры на Linux: QEMU без root, основа из образа Ubuntu, изоляция сети, KVM |
 
 Скриншоты лежат в `img/` (JPEG, обрезаны и уменьшены). **Правило:** новое руководство — в эту папку; скриншоты — только с настоящей системы (ВМ или ваш Mac), без персональных данных.

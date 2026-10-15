@@ -103,3 +103,8 @@ Format: **what** — why it was not verified — **how you can help**.
 - Limit: in every hostile scenario the agent itself declined to break the protection (forging the plans/decision file, another agent's token, shell injection), so they did not test the panel's technical resistance — layer A does; a check that does not rely on the model's good behaviour needs a scripted direct-call scenario.
 - Found and fixed: the tool descriptions said "macOS dialog"/"Mac"/Homebrew on Linux.
 - Not verified: other clients (Codex/OpenCode/Gemini), repeated runs (non-determinism), the agent and the panel under different users.
+
+### Phase 8, step 1 — a remote agent over SSH
+- Verified: the server with the panel is an Ubuntu 24.04 VM, the client is a Mac over SSH with a restricted key (forced command + `restrict`): the MCP bridge works, the L1 tools (10) are available, `plan_changes` is refused, an extra command does not run, TCP and Unix forwarding do not work, no pty.
+- Not verified: a live agent (Claude Code) through the SSH bridge from another computer; macOS as the server (turning on "Remote Login"); `sk-` keys; rsa keys; SSH servers other than OpenSSH 9.6; an address restriction (`from="…"`) — not added, can be put into the line by hand.
+- Residual risk: whoever has the private key and network access gets this agent's rights (like a token); to revoke, delete the line from `authorized_keys` or revoke the agent.
