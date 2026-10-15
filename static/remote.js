@@ -14,6 +14,7 @@ const effChat = (tab) => String((fv("tgChatManual") || "").trim() || fv("tgChat"
 
 // ---- раздел «Операторы»
 function operatorsView(tab) {
+  const remoteOn = !!tab.rapi?.settings?.remote_approval;
   const when = (ts) => (ts ? new Date(ts * 1000).toLocaleString() : "—");
   const rows = activeOps(tab).map((o) => `<tr><td><b>${esc(o.name)}</b><div class="mono muted small">${esc(o.id)}</div></td>
       <td class="small">${o.scopes.map((x) => `<span class="badge">${esc(t("rmt.scope." + x))}</span>`).join(" ")}</td>
@@ -22,6 +23,7 @@ function operatorsView(tab) {
           ${btn(t("gw.revoke"), "rmtOpRevoke", { id: o.id, confirm: t("gw.confirmRevoke", { name: o.name }) }, "danger")}</td></tr>`).join("");
   const chats = tab.tg?.unbound_chats || [];
   return `<p class="muted small">${esc(t("rmt.ops.intro"))}</p>
+    <div class="${remoteOn ? "muted small" : "warn small"}" style="margin-bottom:10px">${esc(t(remoteOn ? "cn.who.opsOn" : "cn.who.opsOff"))} <a href="#connect:approvals">${esc(t("cn.sec.approvals"))}</a></div>
     <div class="card" style="margin-bottom:14px"><div class="name">${esc(t("wz.op.new"))}</div>
       <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">
         ${fld("opName", { ph: t("rmt.opName"), max: 40, w: "180px" })}
@@ -52,8 +54,8 @@ function remoteApiCard(tab) {
       <label class="small"><input type="checkbox" id="rmtEnabled" ${s.enabled ? "checked" : ""}> ${esc(t("rmt.enable"))}</label>
       <label class="small">${esc(t("rmt.bind"))} <input type="text" id="rmtBind" value="${esc(s.bind)}" size="16"></label>
       <label class="small">${esc(t("rmt.port"))} <input type="number" id="rmtPort" value="${esc(s.port)}" style="width:90px"></label>
-      <label class="small"><input type="checkbox" id="rmtTls" ${s.tls ? "checked" : ""}> TLS</label>
-      <label class="small"><input type="checkbox" id="rmtApproval" ${s.remote_approval ? "checked" : ""}> ${esc(t("rmt.approval"))}</label></div>
+      <label class="small"><input type="checkbox" id="rmtTls" ${s.tls ? "checked" : ""}> TLS</label></div>
+    <p class="muted small" style="margin:6px 0 0">${esc(t("cn.who.moved"))} <a href="#connect:approvals">${esc(t("cn.sec.approvals"))}</a></p>
     <div class="small" style="margin-top:6px">${esc(t("rmt.allow"))}</div>
     <textarea id="rmtAllow" rows="2" style="width:100%;font-family:monospace" placeholder="192.168.1.0/24">${esc(s.allow.join("\n"))}</textarea>
     <p class="muted small">${esc(t("rmt.bindHelp"))}</p>
@@ -123,6 +125,35 @@ document.addEventListener("change", async (ev) => {
   await tab.loadRemote(); tab.render();
 });
 
+// Подключение агента на ЭТОМ компьютере: клиент → что выполнить → как проверить → что агент сможет
+const AGENT_CLIENTS = {
+  claude: { name: "Claude Code", kind: "cmd", verified: true },
+  codex: { name: "Codex CLI", kind: "cmd", verified: false },
+  cursor: { name: "Cursor", kind: "json", file: "~/.cursor/mcp.json", verified: false },
+  desktop: { name: "Claude Desktop", kind: "json", file: "~/Library/Application Support/Claude/claude_desktop_config.json", verified: false },
+  gemini: { name: "Gemini CLI", kind: "json", file: "~/.gemini/settings.json", verified: false },
+  other: { name: "other", kind: "json", file: "", verified: false },
+};
+function localConnect(tab, w) {
+  const a = w.agent, cl = fv("agClient", "claude"), c = AGENT_CLIENTS[cl], ag = (tab.data?.agents || []).find((x) => x.id === a.id);
+  const seen = ag?.last_seen && ag.last_seen >= w.t0;
+  const cmd = cl === "codex" ? a.claude_code.replace(/^claude mcp add/, "codex mcp add") : a.claude_code;
+  const chips = Object.entries(AGENT_CLIENTS).map(([k, v]) => `<label class="opt" style="display:inline-flex;margin:2px 4px 2px 0;padding:5px 10px"><input type="radio" name="agClient" data-f="agClient" value="${k}" ${cl === k ? "checked" : ""}><span>${esc(k === "other" ? t("wz.agent.cOther") : v.name)}</span></label>`).join("");
+  const how = c.kind === "cmd"
+    ? `<div class="small"><b>1.</b> ${esc(t("wz.agent.cmdStep", { client: c.name }))}</div><pre class="diff" style="white-space:pre-wrap">${esc(cmd)}</pre>${btn(t("gw.copy"), "cnCopy", { text: cmd })}`
+    : `<div class="small"><b>1.</b> ${esc(t("wz.agent.jsonStep", { client: cl === "other" ? t("wz.agent.cOther") : c.name }))}${c.file ? ` <code>${esc(c.file)}</code>` : ""}</div>
+       <pre class="diff">${esc(a.json)}</pre>${btn(t("gw.copy"), "cnCopy", { text: a.json })}<div class="muted small">${esc(t("wz.agent.jsonMerge"))}</div>`;
+  return `<p class="muted small">${esc(t("wz.agent.localIntro"))}</p>
+    <div class="small" style="margin-bottom:4px"><b>${esc(t("wz.agent.cPick"))}</b></div><div>${chips}</div>
+    ${c.verified ? "" : `<div class="muted small" style="margin-top:4px">${esc(t("wz.agent.unverified"))}</div>`}
+    <div style="margin-top:10px">${how}
+      <div class="small" style="margin-top:10px"><b>2.</b> ${esc(t("wz.agent.restart", { client: cl === "other" ? t("wz.agent.cOther") : c.name }))}</div>
+      <div class="small" style="margin-top:8px"><b>3.</b> ${esc(t("wz.agent.tryIt"))}</div><pre class="diff" style="white-space:pre-wrap">${esc(t("wz.agent.prompt"))}</pre>${btn(t("gw.copy"), "cnCopy", { text: t("wz.agent.prompt") })}</div>
+    <div class="card" style="margin-top:12px;${seen ? "border-color:var(--green)" : ""}">${seen ? `<span class="badge green">✓</span> ${esc(t("wz.agent.seen"))}` : `<span class="muted">⏳ ${esc(t("wz.agent.waitSeen"))}</span>`}</div>
+    <h3 style="margin:14px 0 4px">${esc(t("wz.agent.canTitle"))}</h3><div class="small muted">${esc(t("gw.toolsList"))}</div>
+    <p class="muted small">${esc(t("gw.tokenNote", { file: a.token_file }))}</p>`;
+}
+
 // ---- мастера
 const WIZ = {
   agent: {
@@ -145,15 +176,14 @@ const WIZ = {
         next: async (tab, w) => { w.where = fv("agWhere", "local"); if (w.where === "ssh") { tab.remoteAgent = w.agent.id; tab.remoteKey = ""; await tab.loadRemote(); } } },
       { title: "wz.agent.s3",
         render: (tab, w) => {
+          w.t0 ??= Date.now() / 1000;
           const a = w.agent, lvlNote = { L1: t("wz.agent.done1"), L2: t("wz.agent.done2"), L3: t("wz.agent.done3") }[a.level || fv("agLevel", "L1")];
           let body = "";
           if (w.where === "ssh") body = sshBody(tab, false);
           else if (w.where === "api") body = tab.rapi?.running
             ? `<p class="small">${esc(t("wz.agent.apiOn", { url: `${tab.rapi.scheme}://${(tab.remote?.ssh?.hosts || ["HOST"])[0]}:${tab.rapi.settings.port}` }))}</p>${btn(t("rmt.issue"), "cnIssueAgent", { id: a.id }, "primary")}`
             : `<p class="small">${esc(t("wz.agent.apiOff"))}</p>${btn(t("cn.w.api"), "cnWiz", { id: "api" }, "primary")}`;
-          else body = `<p class="muted small">${esc(t("gw.tokenNote", { file: a.token_file }))}</p><div class="muted small">${esc(t("gw.claudeCmd"))}</div>
-            <pre class="diff" style="white-space:pre-wrap">${esc(a.claude_code)}</pre>${btn(t("gw.copy"), "cnCopy", { text: a.claude_code })}
-            <div class="muted small" style="margin-top:10px">${esc(t("gw.jsonCfg"))}</div><pre class="diff">${esc(a.json)}</pre>${btn(t("gw.copy"), "cnCopy", { text: a.json })}`;
+          else body = localConnect(tab, w);
           return `<div class="small" style="margin-bottom:8px">${esc(t("wz.agent.created", { name: a.name }))}</div>${body}<div class="warn small" style="margin-top:12px">${esc(lvlNote)}</div>`;
         } },
     ],
@@ -314,7 +344,7 @@ const WIZ = {
 handlers.rmtHideOnce = async () => { tabs.connect.once = null; tabs.connect.render(); };
 handlers.rmtSave = async () => {
   const body = { enabled: $("rmtEnabled").checked, bind: $("rmtBind").value.trim(), port: Number($("rmtPort").value), tls: $("rmtTls").checked,
-                 remote_approval: $("rmtApproval").checked, allow: $("rmtAllow").value.split(/[\s,]+/).filter(Boolean) };
+                 allow: $("rmtAllow").value.split(/[\s,]+/).filter(Boolean) };
   try { await api("/api/remote/settings", body); toast(t("rmt.saved")); } catch (e) { toast(e.message, true); }
   await rmtReload();
 };

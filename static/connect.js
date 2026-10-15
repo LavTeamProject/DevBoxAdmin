@@ -156,8 +156,26 @@ function agentsView(tab) {
 }
 
 // ---- подтверждения
+function approverCard(tab) {
+  const on = !!tab.rapi?.settings?.remote_approval, ops = approverOps(tab), tg = tgState(tab);
+  return `<div class="card" style="margin-bottom:14px"><div class="name">${esc(t("cn.who.title"))}</div>
+    <p class="muted small">${esc(t("cn.who.text"))}</p>
+    <label class="opt"><input type="checkbox" checked disabled><span><b>${esc(t("cn.who.local"))}</b><span class="muted small" style="display:block">${esc(t("cn.who.localText"))}</span></span></label>
+    <label class="opt"><input type="checkbox" id="apprRemote" ${on ? "checked" : ""}><span><b>${esc(t("cn.who.remote"))}</b>
+      <span class="muted small" style="display:block">${esc(t("cn.who.remoteText"))}</span>
+      <span class="small" style="display:block;margin-top:4px">${ops.length ? esc(t("cn.who.ops", { list: ops.map((o) => o.name + (o.telegram_chat_id ? " (Telegram)" : "")).join(", ") })) : `<span class="warn-text">${esc(t("cn.who.noOps"))}</span> <a href="#connect:operators">${esc(t("cn.sec.operators"))}</a>`}
+        · Telegram: ${esc(tg[1])}</span></span></label>
+    <div class="muted small" style="margin-top:6px">${esc(t("cn.who.l3"))}</div></div>`;
+}
+document.addEventListener("change", async (ev) => {
+  if (ev.target.id !== "apprRemote") return;
+  try { await api("/api/remote/settings", { remote_approval: ev.target.checked }); toast(t("rmt.saved")); }
+  catch (e) { ev.target.checked = !ev.target.checked; toast(e.message, true); }
+  await tabs.connect.load();
+});
+
 function approvalsView(tab) {
-  return `${approvalExplainer(tab)}${plansSection(tab.plans)}`;
+  return `${approverCard(tab)}${plansSection(tab.plans)}${approvalExplainer(tab)}`;
 }
 
 function catalogView(tab) {
