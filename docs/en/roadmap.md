@@ -889,7 +889,9 @@ The owner's request: the panel runs on a server and can be controlled **from ano
 
 **Step 1 (SSH) — done, the scheme changed after checking on VMs.** The `ssh -L` tunnel proved unsafe: a key with `restrict,port-forwarding` still runs commands on the server and forwards the panel's HTTP-API port (the owner's full API). Adopted: a **forced command** in `authorized_keys` — `command="<python> mcp_server.py --agent <id>",restrict <key>`. The key can only start the MCP bridge of one agent: no shell, no forwarding (TCP or Unix socket), any requested command is ignored, the agent's secret never leaves the server (nothing to copy). The client connects with `claude mcp add service-admin -- ssh -i <key> -o IdentitiesOnly=yes -o BatchMode=yes user@host`. The panel builds the `authorized_keys` line from a pasted public key (strict format check) and does not edit the file itself. Verified on two machines: the server with the panel (a VM) and a client (a Mac): 10 L1 tools, `plan_changes` refused, `touch /tmp/PWNED` did not run, TCP/Unix forwarding does not work, no pty. Tests: `tests/test_remote_ssh.py`.
 
-**Questions for the owner (still open):** (2) one operator or several per panel (the "operator" role = a human approving plans from an app/bot)? (5) next step: the client API or Telegram?
+**Questions for the owner (still open):** Next step (client API or Telegram) — a suggestion: the client API first, the bot is built on it.
+
+**Operators (owner's decision):** an operator is a panel administrator; as many as the user creates in the panel. Each operator has their own name, their own token (for Telegram, their own `chat_id`), revocation and an audit record `by=operator:<name>`; an "Operators" page is created together with the client API.
 
 ---
 
