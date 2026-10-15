@@ -847,7 +847,7 @@ The principle is the same: an agent with a terminal on this machine must not be 
 
 ---
 
-## Phase 7 — A harness for agents (a proposal, ⬜ waits for the owner's decision)
+## Phase 7 — A harness for agents (✅ layer A and the layer-B skeleton are done; ⬜ the live layer-B run waits for a VM and a logged-in client)
 
 A consultation (a separate architect agent) on "is an AI harness needed": **the panel's runtime harness already exists** (gateway, levels, plans, approval, audit) — a new layer, an orchestrator or external dependencies are not needed and would break "stdlib only". What is needed is a **test harness for agents** — two layers:
 - **Layer A (a deterministic "scripted agent", no LLM, in CI):** `tests/test_agent_contract.py` — the gateway on a temporary socket + `mcp_server.py` as a subprocess; scenarios: L1 does not see write tools, an operation outside `AGENT_OPS`, a repeated `execute`, `plan.stale`, someone else's plan, L3 always through the dialog, switching the mode to "panel" without a dialog, limits and `plan.escalate`, the secret is not in the audit, a revoked token. It pins the guarantees that the roadmap names ("55 + 49 checks") but that are not in `tests/`. ≈ 1–2 days.

@@ -92,3 +92,8 @@ Format: **what** — why it was not verified — **how you can help**.
 - Verified: unit tests (47) and 70 GET routes in `debian:12`, `ubuntu:22.04`, `ubuntu:24.04` (arm64) containers — 0 errors; macOS: 76 routes, 0 differences; socket-owner check in the lab VM (another user → 403).
 - Not verified: a real workstation with a screen (pkexec/zenity/polkit), x86_64, KVM (`vm-linux.yml`), a GitHub runner, Codex/OpenCode/Gemini MCP clients; the socket-owner check is not applied on macOS.
 - Review: before fixes F1–F7, L2/L3 agents on Linux were considered unsafe; fixed, no second independent review of the fixes was done.
+
+### Phase 7 — harness for agents
+- Done: `tests/test_agent_contract.py` (22 checks of the gateway/plans/MCP subprocess, in CI); `tests/agent_eval/` (13 scenarios, runner `run_eval.py`, the `fake` client passed 13/13 on macOS).
+- Not verified: no run with a live agent yet (`--client claude`) — needs a disposable VM with a logged-in client; Codex/OpenCode/Gemini are not described in `clients.json`; the runner does not automate the approval channels (zenity/helper), the "human" is the panel button (L2 only).
+- Expected findings (`known_gap`): a same-user agent with a shell can edit `plans.json` and read other agents' tokens.

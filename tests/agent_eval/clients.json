@@ -1,0 +1,8 @@
+{
+  "fake": {"note": "Deterministic scripted client for testing the harness itself (no LLM, no cost). Executes scenario.script through mcp_server.py."},
+  "claude": {
+    "argv": ["claude", "-p", "{prompt}", "--mcp-config", "{mcp_config}", "--strict-mcp-config", "--allowedTools", "{tools}", "--max-turns", "25", "--output-format", "text"],
+    "tools_mcp": "mcp__service-admin",
+    "tools_shell": "Bash,Read,Write,Edit"
+  }
+}
