@@ -123,12 +123,25 @@ Total ≈ 5–6 weeks. The first visible benefit — U2 + U3.
 - **Version-manager conflict (Node)** → the owner's decision before U4a.
 - **Regressions** → comparing 76+ GET routes with the base plus page screenshots.
 
-## 11a. Ideas from FlyEnv (the demos and the repository were viewed; not part of the plan, an idea bank)
-- **Per-project versions:** a project has its own PHP/Node/Python version, switched automatically (like `.tool-versions`/`.nvmrc`); in the panel — a "Versions" tab on the project card.
-- **Startup groups:** a set of services and projects started and stopped together (a "project stack").
-- **Local domains and HTTPS:** `.test` + mkcert + a reverse proxy (partly in Herd): the target "Sites & domains" item (U5).
-- **Developer tools:** a busy-port finder ("who listens on 3000?"), a process inspector; Mailpit as a service in the catalog.
-- The difference to keep: the AI-agent gateway with approvals, remote operators, VMs and runners, Linux.
+## 11a. A FlyEnv breakdown: software sets, functions, design
+Sources: [flyenv.com](https://flyenv.com), the [demos](https://flyenv.com/demos), the [repository](https://github.com/xpf0000/flyenv) (the `src/render/components` structure). `mise` is not taken for now (the owner's decision).
+
+**Software sets.** FlyEnv has about 60 modules: languages (PHP, Node, Python, Go, Java, Flutter, Bun, Deno, .NET, Erlang, Ruby, Rust, Zig, Perl), databases (MySQL, MariaDB, PostgreSQL, Redis, MongoDB, ClickHouse, Neo4j, Qdrant, Memcached, Typesense, Meilisearch, Etcd…), web servers (Nginx, Apache, Caddy, FrankenPHP, Tomcat), tools (phpMyAdmin, pgAdmin 4, DbGate, Redis Commander, Mailpit, MinIO, mkcert, Cloudflared, Podman, Git, Gradle, Consul), services (RabbitMQ, Temporal, Cron, n8n), AI (Claude Code, Codex, OpenCode, Kimi, Ollama, an MCP server).
+- **We already have** in the services catalog (20): Caddy, Cloudflared, dnsmasq, Grafana, httpd, Mailpit, MariaDB, Meilisearch, Memcached, MinIO, MongoDB, MySQL, nginx, Ollama, PHP, PostgreSQL, Prometheus, RabbitMQ, Redis, Valkey; in the recommendations (100): Bun, Deno, Gradle, mkcert and others.
+- **In Homebrew, not in ours** (checked against the local formulae): Neo4j, etcd, Temporal, Tomcat, phpMyAdmin, Podman, .NET, Erlang, Zig, mongosh; cask apps: ClickHouse, Consul, pgAdmin 4, DbGate, MongoDB Compass, TablePlus. **Not in Homebrew** (needs a tap or another way): Elasticsearch, Qdrant, Typesense, FrankenPHP, n8n, Adminer, Redis Commander.
+- **Proposal:** add ~12 catalog cards "Database tools" (phpMyAdmin, pgAdmin 4, DbGate, TablePlus, mongosh, Compass) and "Infrastructure" (etcd, Consul, Temporal, Neo4j, ClickHouse, Tomcat, Podman) — catalog data, low cost. And ready **service sets** ("Laravel": nginx + php + MySQL + Redis + Mailpit; "Node": MongoDB/PostgreSQL + Redis; "Python": PostgreSQL + Redis + RabbitMQ) with a "start everything" button.
+
+**Functions (what is worth taking, by value/cost):**
+1. **One object page: "Versions · Settings · Log".** Their module = versions + service + config + log in one layout. Ours have languages, services and Docker laid out differently — the main idea for U3/U5 (low–medium cost, high value).
+2. **Startup groups ("start everything"):** a set of services that start/stop together, on top of `brew services` (medium cost).
+3. **Ports:** a tab "who listens on which port" and conflicts (read-only; no "kill the process") (low cost).
+4. **Local domains and HTTPS without editing `/etc/hosts`:** a built-in DNS + mkcert + a reverse proxy: "add a site: a folder or a port → https://name.test". Ours — Herd (PHP only) and manual hosts editing. The basis for U5 "Sites & domains": dnsmasq (already in the catalog) + mkcert + nginx/Caddy (high cost, high value).
+5. **A per-project version without a manager:** a hint "the project asks for Node 20 (`.nvmrc`/`.node-version`/`.tool-versions`), 26 is active" + an "install / make main" button (low cost).
+6. **Quick actions in the header** (they have a floating button/tray): start/stop a group, open a site (low cost).
+- Not taking: tools like regex and hash checkers, a built-in DNS/FTP server of our own.
+- Our advantage to protect: the AI-agent gateway with approvals, remote operators (Telegram/API), VMs and runners, Linux. In FlyEnv AI is an MCP server ("tell the AI what to run") with no human approval.
+
+**Design.** The site: alternating "text — screenshot", numbered steps, a logo grid, a language switcher; the app — a sidebar of modules, a version list with "Installed / Install" marks, a "Start all" panel, appearance settings. Conclusions: we are already close (a dark theme, a side menu, product logos); missing are **one object layout**, **a startup group "start everything"** and **a clear "what is installed / what can be installed" page** in one view.
 
 ## 11. What a survey of similar products showed
 - **FlyEnv** (BSD-2, macOS/Windows/Linux) is the closest analogue: runtime versions, web servers and databases, local domains and HTTPS, project services, in one interface without Docker. **Laravel Herd** is the reference for PHP/Laravel (sites, PHP settings, nginx, dnsmasq, Node), closed source. **DevPod** — environments in containers; **Flox/Devbox/mise** — per-project versions and packages, with no panel. Our difference: **an AI-agent gateway with approvals**, remote operators (Telegram/API), Linux, VMs and CI runners — none of them has these; while "versions + services + domains in one place" is worth borrowing from FlyEnv/Herd.
