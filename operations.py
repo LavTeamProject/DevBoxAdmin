@@ -176,6 +176,11 @@ def run_package(action, kind, name):
         if "job" not in r:  # без экрана пароль можно ввести только в терминале — агентам такой путь закрыт требованием admin_rights
             raise ApiError("An administrator terminal is needed for this command", code="platform.needs_terminal", command=r.get("terminal", ""))
         return r
+    if action == "uninstall" and kind == "formula":
+        import runtimes
+        lang = runtimes.uninstall_blocker(name)
+        if lang:
+            raise ApiError("Эта версия выбрана по умолчанию (или на ней работает панель) — сначала выберите другую", HTTPStatus.CONFLICT, code="lang.cant_remove_default", lang=lang)
     return {"job": start_job(f"brew {action} {name}", [BREW, action, f"--{kind}", name], "brew")}
 
 

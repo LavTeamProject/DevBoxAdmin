@@ -89,3 +89,23 @@ class Versions(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UninstallBlocker(unittest.TestCase):
+    def test_selected_and_panel_python_blocked(self):
+        import runtimes
+        info = {"selected": "brew:node@20", "installs": [{"id": "brew:node@20", "source": "Homebrew", "real": runtimes.BREW_PREFIX + "/Cellar/node@20/20.1/bin/node"},
+                                                         {"id": "brew:node@22", "source": "Homebrew", "real": runtimes.BREW_PREFIX + "/Cellar/node@22/22.1/bin/node"}]}
+        with mock.patch.dict(runtimes.INFO, {"node": lambda q: info, "python": lambda q: {}, "go": lambda q: {}, "ruby": lambda q: {}, "java": lambda q: {}}):
+            self.assertEqual(runtimes.uninstall_blocker("node@20"), "node")
+            self.assertIsNone(runtimes.uninstall_blocker("node@22"))
+
+
+class ToolsCache(unittest.TestCase):
+    def test_miss_is_not_cached_long(self):
+        import time
+        runtimes._tools["zz-new-tool"] = (time.time() - 5, None)
+        with mock.patch.object(runtimes, "shell_probe", return_value={"zz-new-tool": "/x/zz"}) as p:
+            self.assertEqual(runtimes.tools("zz-new-tool"), ["/x/zz"])
+            self.assertEqual(p.call_count, 1)
+        runtimes._tools.pop("zz-new-tool", None)

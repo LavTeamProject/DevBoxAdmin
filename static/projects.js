@@ -236,7 +236,7 @@ tabs.projects = {
         : i.ok === false ? `<span class="badge amber">${esc(t("projects.verMismatch"))}</span>` : `<span class="badge gray">${esc(t("projects.verUnknown"))}</span>`;
       const fix = i.ok === true ? "" : i.formula
         ? (i.formula_installed ? `<span class="muted">${esc(t("projects.verInstalled", { f: i.formula }))}</span>`
-            : `<a class="btn" href="#service:${encodeURIComponent(i.formula)}">${esc(t("projects.verInstall", { f: i.formula }))}</a>`)
+            : btn(t("projects.verInstall", { f: i.formula }), "projInstallFormula", { formula: i.formula }, "go"))
         : `<a href="${esc(i.page)}">${esc(t("projects.verOpen"))}</a>`;
       return `<tr><td>${esc(i.name)}</td><td class="mono">${esc(i.wanted)}</td><td class="muted">${esc(i.source)}</td><td class="mono">${esc(i.active || "—")}</td><td>${badge}</td><td>${fix}</td></tr>`;
     };
@@ -258,6 +258,9 @@ tabs.projects = {
 };
 
 // Isi satu kartu repo dengan ringkasannya (dipakai renderList dan fillSummaries).
+handlers.projInstallFormula = (d) => runJob(api("/api/apps/action", { name: d.formula, type: "formula", action: "install" }),
+  () => { const p = tabs.projects.param; if (tabs.projects.ver) delete tabs.projects.ver[p]; tabs.projects.loadVersions(p); });
+
 function fillProjectCard(path, s) {
   const host = $("pc-" + hashPath(path));
   if (!host) return;

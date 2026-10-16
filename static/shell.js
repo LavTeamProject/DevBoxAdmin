@@ -95,10 +95,11 @@ if ($("qaBtn")) {
     e.stopPropagation();
     const pop = $("qaPop");
     if (!pop.hidden) { pop.hidden = true; return; }
-    await qaLoad();
-    qaRender();
+    qaRender();                               // сразу из того, что уже загружено; brew services бывает медленным — список обновится ниже
     pop.hidden = false;
     $("qaBtn").setAttribute("aria-expanded", "true");
+    await qaLoad();
+    if (!pop.hidden) qaRender();
   });
   document.addEventListener("click", (e) => { const p = $("qaPop"); if (p && !p.hidden && !p.contains(e.target)) { p.hidden = true; $("qaBtn").setAttribute("aria-expanded", "false"); } });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("qaPop").hidden = true; });

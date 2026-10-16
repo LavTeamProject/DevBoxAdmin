@@ -40,16 +40,26 @@ def _mac_state():
     return svc.BREW_PREFIX, installed, running
 
 
-def _dnsmasq_test(prefix):
-    """Есть ли в конфиге dnsmasq правило для *.test и resolver-файл macOS: (правило, resolver)."""
-    rule = False
-    for p in (os.path.join(prefix, "etc", "dnsmasq.conf"),):
+def dnsmasq_rule(paths):
+    """Есть ли в конфигах dnsmasq правило address=/test/… для *.test (только чтение)."""
+    for p in paths:
         try:
             with open(p, errors="replace") as f:
-                rule = rule or any(l.strip().startswith("address=/") and "/test/" in l.replace(".test/", "/test/") for l in f)
+                if any(l.strip().startswith("address=/") and ("/test/" in l or l.strip().startswith("address=/.test/")) for l in f):
+                    return True
         except OSError:
-            pass
-    return rule, os.path.isfile("/etc/resolver/test")
+            continue
+    return False
+
+
+def _dnsmasq_test(prefix):
+    """(правило для *.test, resolver-файл macOS)."""
+    import glob
+    if sys.platform == "darwin":
+        paths = [os.path.join(prefix, "etc", "dnsmasq.conf")] + sorted(glob.glob(os.path.join(prefix, "etc", "dnsmasq.d", "*.conf")))
+    else:
+        paths = ["/etc/dnsmasq.conf"] + sorted(glob.glob("/etc/dnsmasq.d/*.conf"))
+    return dnsmasq_rule(paths), os.path.isfile("/etc/resolver/test")
 
 
 def sites_info(q=None):
@@ -61,7 +71,7 @@ def sites_info(q=None):
         parts.append({"id": pid, "formula": formula, "installed": inst, "service": is_service,
                       "running": (running or {}).get(formula) if (mac and is_service and inst) else None})
     ca = os.path.isfile(os.path.expanduser("~/Library/Application Support/mkcert/rootCA.pem")) if mac else os.path.isfile(os.path.expanduser("~/.local/share/mkcert/rootCA.pem"))
-    rule, resolver = _dnsmasq_test(prefix) if mac else (False, False)
+    rule, resolver = _dnsmasq_test(prefix)
     herd = {"installed": False}
     if mac:
         import herdphp

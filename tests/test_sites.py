@@ -28,3 +28,14 @@ class Info(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Dnsmasq(unittest.TestCase):
+    def test_rule_detection(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "a.conf")
+            open(p, "w").write("# c\naddress=/test/127.0.0.1\n")
+            q = os.path.join(d, "b.conf")
+            open(q, "w").write("address=/example.com/1.2.3.4\n")
+            self.assertTrue(sites.dnsmasq_rule([q, p]))
+            self.assertFalse(sites.dnsmasq_rule([q, "/nonexistent"]))

@@ -144,7 +144,8 @@ _tools = {}
 def tools(*names):
     """Path absolut perintah seperti yang dilihat terminal (PATH server bisa
     lebih sempit, mis. saat jalan dari LaunchAgent). Cache 60 detik."""
-    missing = [n for n in names if n not in _tools or time.time() - _tools[n][0] > 60]
+    # найденное помним 60 с, «не найдено» — только 3 с: иначе только что установленный инструмент панель «не видит» целую минуту
+    missing = [n for n in names if n not in _tools or time.time() - _tools[n][0] > (60 if _tools[n][1] else 3)]
     if missing:
         probe = shell_probe(missing)
         for n in missing:
@@ -249,8 +250,10 @@ def uv_path():
     p = tools("uv")[0]
     if p:
         return p
-    cand = os.path.join(HOME, ".local", "bin", "uv")
-    return cand if os.access(cand, os.X_OK) else None
+    for cand in (os.path.join(HOME, ".local", "bin", "uv"), os.path.join(BREW_PREFIX, "bin", "uv")):
+        if os.access(cand, os.X_OK):
+            return cand
+    return None
 
 
 def _externally_managed(path):
@@ -790,6 +793,22 @@ def generic_info(key):
 
 INFO = {"python": python_info, "go": go_info, "rust": rust_info, "java": java_info, "ruby": ruby_info, "node": node_info}
 ACTIONS = {"python": python_action, "go": go_action, "rust": rust_action, "java": java_action, "ruby": ruby_action, "node": node_action}
+
+
+def uninstall_blocker(formula):
+    """Ключ языка, если формула — выбранная по умолчанию версия этого языка или Python/Node, на которых работает панель; иначе None.
+    Проверка на сервере: кнопку прячет и интерфейс, но удалить через API (или по плану агента) такую версию нельзя — ссылки в ~/.service-admin/bin остались бы битыми."""
+    me = os.path.realpath(sys.executable)
+    for key in ("node", "python", "go", "ruby", "java"):
+        try:
+            info = INFO[key]({})
+        except Exception:  # noqa: BLE001 — не смогли разобрать язык: не мешаем удалению
+            continue
+        sel = info.get("selected")
+        for i in info.get("installs") or []:
+            if brew_formula_of(i) == formula and (i.get("id") == sel or i.get("real") == me):
+                return key
+    return None
 
 
 def _mark_removable(info):

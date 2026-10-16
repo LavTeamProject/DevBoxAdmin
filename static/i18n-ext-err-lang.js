@@ -53,3 +53,6 @@ Object.assign(I18N.en, {
   "err.svc.ingress_invalid": "invalid hostname/service (example: app.domain.com → http://localhost:8000)",
   "err.svc.config_missing": "config.yml is missing in ~/.cloudflared",
 });
+
+Object.assign(I18N.ru, { "err.lang.cant_remove_default": "Эта версия выбрана по умолчанию (или на ней работает панель): сначала выберите другую" });
+Object.assign(I18N.en, { "err.lang.cant_remove_default": "This version is the default (or the panel runs on it): choose another one first" });
