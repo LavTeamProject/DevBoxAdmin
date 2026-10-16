@@ -29,7 +29,8 @@ function navMarkActive() {
   const h = decodeURIComponent(location.hash || "#dashboard");
   document.querySelectorAll("#navTech a").forEach((a) => {
     const href = decodeURIComponent(a.getAttribute("href"));
-    a.classList.toggle("active", h === href || h.startsWith(href + ":"));
+    // Flutter/Dart ведут на «Мобильную разработку»: у неё свой пункт, второй раз не подсвечиваем
+    a.classList.toggle("active", href !== "#mobile" && (h === href || h.startsWith(href + ":")));
   });
   // у страницы сервиса «Пакеты и приложения» тоже подсвечены (nav: packages) — оставляем только пункт самого сервиса
   if (document.querySelector("#navTech a.active")) document.querySelector('#tabs a[href="#packages"]')?.classList.remove("active");
