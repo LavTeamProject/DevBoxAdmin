@@ -143,6 +143,14 @@ def _digest(op_id, params):
     return hashlib.sha256(json.dumps(core, sort_keys=True, default=str, ensure_ascii=False).encode()).hexdigest(), pl
 
 
+AUTO_RUN_KINDS = ("install", "lint", "test", "build")   # dev-сервер агенту не доступен; CI (L3) — всегда с диалогом
+
+
+def _auto_run(agent, op_id, params, level):
+    return (op_id == "project.run" and level == "L2" and params.get("kind") in AUTO_RUN_KINDS
+            and agent.get("level") in ("L2", "L3") and bool(agent.get("auto_run")))
+
+
 def _red_run(p):
     """Тест/сборка проекта отработали и вернули ненулевой код (красные тесты). Это нормальный шаг цикла
     «исправил → перезапустил», а не сбой панели: в эскалацию не считаем. Таймаут (124), отмена (143),
@@ -201,6 +209,10 @@ def propose(agent, op_id, params):
         if not noop and level == "L2" and agent.get("level") == "L2" and "L2" in (agent.get("auto_approve") or []):  # L3/L4 — никогда
             plan["status"] = "approved"
             plan["approval"] = {"by": "auto", "at": now, "mode": "auto"}
+        elif not noop and _auto_run(agent, op_id, params, level):
+            # отдельный переключатель «тесты без подтверждения»: только команды из пресета проекта (их задал человек), и для L2, и для L3
+            plan["status"] = "approved"
+            plan["approval"] = {"by": "auto", "at": now, "mode": "auto_run"}
         plans.append(plan)
         _save_plans(plans)
     _audit("propose", plan, "auto-approved" if plan["status"] == "approved" else plan["status"], level=level)

@@ -68,7 +68,7 @@ def _hash(token):
 
 
 def _public(a):
-    return {k: a.get(k) for k in ("id", "name", "level", "created", "expires", "revoked", "last_seen", "calls", "auto_approve")}
+    return {k: a.get(k) for k in ("id", "name", "level", "created", "expires", "revoked", "last_seen", "calls", "auto_approve", "auto_run")}
 
 
 def list_agents(q=None):
@@ -116,7 +116,7 @@ def register(body):
         fd = os.open(os.path.join(TOKEN_DIR, agent_id + ".token"), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(fd, "w") as f:
             f.write(token + "\n")
-        data["agents"].append({"id": agent_id, "name": name, "level": level, "auto_approve": [], "created": time.time(), "last_seen": None, "calls": 0,
+        data["agents"].append({"id": agent_id, "name": name, "level": level, "auto_approve": [], "auto_run": False, "created": time.time(), "last_seen": None, "calls": 0,
                                "expires": time.time() + days * 86400 if days else None, "revoked": False, "token_hash": _hash(token)})
         _save(data)
     return {"id": agent_id, "name": name, "token_file": os.path.join(TOKEN_DIR, agent_id + ".token"), **_snippets(agent_id, name)}
@@ -170,7 +170,7 @@ def set_agent(body):
         a = next((x for x in data["agents"] if x["id"] == body.get("id") and not x.get("revoked")), None)
         if not a:
             raise ApiError("Агент не найден", HTTPStatus.NOT_FOUND, code="gw.not_found")
-        before = {"level": a["level"], "auto_approve": a.get("auto_approve") or []}
+        before = {"level": a["level"], "auto_approve": a.get("auto_approve") or [], "auto_run": bool(a.get("auto_run"))}
         if "level" in body:
             if body["level"] not in LEVELS:
                 raise ApiError("Уровень агента: L1 (чтение), L2 (предлагать изменения) или L3 (ещё и операции CI — всегда с диалогом)", code="gw.level_invalid")
@@ -180,10 +180,16 @@ def set_agent(body):
             if not isinstance(aa, list) or any(x != "L2" for x in aa):
                 raise ApiError("«Не спрашивать» можно включить только для уровня L2", code="gw.auto_invalid")
             a["auto_approve"] = sorted(set(aa))
+        if "auto_run" in body:
+            if not isinstance(body["auto_run"], bool):
+                raise ApiError("auto_run: true или false", code="gw.auto_invalid")
+            a["auto_run"] = body["auto_run"]
         if a["level"] in ("L1", "L3"):
             a["auto_approve"] = []  # L1: нечего одобрять; L3: «не спрашивать» запрещено — подтверждение человеком обязательно всегда
+        if a["level"] == "L1":
+            a["auto_run"] = False   # L1 запускать ничего не может
         _save(data)
-        after = {"level": a["level"], "auto_approve": a["auto_approve"]}
+        after = {"level": a["level"], "auto_approve": a["auto_approve"], "auto_run": bool(a.get("auto_run"))}
     audit.record("gateway:settings", {"id": a["id"], "name": a["name"], "before": before, "after": after}, "ok")
     return {"agent": _public(a)}
 

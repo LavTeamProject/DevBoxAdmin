@@ -181,3 +181,14 @@ Object.assign(I18N.en, {
   "err.gw.level_invalid": "Agent level: L1 (read), L2 (propose changes) or L3 (also CI operations — always with a dialog)",
   "err.gw.auto_invalid": "“Don't ask” can only be enabled for level L2",
 });
+
+Object.assign(I18N.ru, {
+ "gw.autoRun": "тесты без подтверждения",
+ "gw.autoRunTitle": "Тест, линтер, сборка и установка зависимостей — команды из пресета проекта — запускаются без диалога. Всё остальное спрашивает.",
+ "gw.confirmRun": "Разрешить этому агенту запускать тесты, линтер, сборку и установку зависимостей проекта БЕЗ подтверждения? Запускаются только команды из пресета проекта, но тесты выполняют код проекта, который агент мог изменить. Остальные изменения по-прежнему с подтверждением. Каждый запуск пишется в журнал."
+});
+Object.assign(I18N.en, {
+ "gw.autoRun": "tests without approval",
+ "gw.autoRunTitle": "Test, lint, build and dependency install — the project's preset commands — run without a dialog. Everything else still asks.",
+ "gw.confirmRun": "Allow this agent to run project tests, lint, build and dependency install WITHOUT approval? Only the project's preset commands run, but tests execute project code the agent may have changed. Other changes still need approval. Every run is logged."
+});

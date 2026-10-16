@@ -139,6 +139,7 @@ function agentsView(tab) {
     return `<tr><td><b>${esc(a.name)}</b><div class="mono muted small">${esc(a.id)}</div></td>
       <td>${a.revoked ? `<span class="badge">${esc(a.level)}</span>` : `<select data-gw-level="${esc(a.id)}" aria-label="${esc(t("gw.col.level"))}">
           ${["L1", "L2", "L3"].map((l) => `<option value="${l}" ${l === a.level ? "selected" : ""}>${l} · ${esc(t("gw.lvl." + l))}</option>`).join("")}</select>
+        ${a.level === "L2" || a.level === "L3" ? `<div><label class="small ${a.auto_run ? "warn-text" : "muted"}" title="${esc(t("gw.autoRunTitle"))}"><input type="checkbox" data-gw-run="${esc(a.id)}" ${a.auto_run ? "checked" : ""}> ${esc(t("gw.autoRun"))}</label></div>` : ""}
         ${a.level === "L2" ? `<div><label class="small ${a.auto_approve?.includes("L2") ? "warn-text" : "muted"}"><input type="checkbox" data-gw-auto="${esc(a.id)}" ${a.auto_approve?.includes("L2") ? "checked" : ""}> ${esc(t("gw.autoApprove"))}</label></div>` : ""}`}</td>
       <td><span class="badge ${cls}">${esc(t(key))}</span></td>
       <td class="muted small">${esc(when(a.created))}</td><td class="muted small">${esc(a.expires ? when(a.expires) : t("gw.noExpiry"))}</td>
@@ -251,6 +252,10 @@ document.addEventListener("change", async (ev) => {
       if (el.value === "L3" && !confirm(t("gw.confirmL3"))) { await tabs.connect.load(); return; }
       await api("/api/agent-gateway/settings", { id: el.dataset.gwLevel, level: el.value });
       toast(t("gw.levelSaved")); await tabs.connect.load();
+    } else if (el.dataset?.gwRun) {
+      if (el.checked && !confirm(t("gw.confirmRun"))) { el.checked = false; return; }
+      await api("/api/agent-gateway/settings", { id: el.dataset.gwRun, auto_run: el.checked });
+      toast(t("gw.autoSaved")); await tabs.connect.load();
     } else if (el.dataset?.gwAuto) {
       if (el.checked && !confirm(t("gw.confirmAuto"))) { el.checked = false; return; }
       await api("/api/agent-gateway/settings", { id: el.dataset.gwAuto, auto_approve: el.checked ? ["L2"] : [] });

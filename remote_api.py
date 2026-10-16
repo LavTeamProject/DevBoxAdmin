@@ -635,8 +635,11 @@ def agent_set(body):
         raises = new_level in rank and rank[new_level] > rank.get(ag["level"], 0)
         auto = body.get("auto_approve")
         gains_auto = isinstance(auto, list) and "L2" in auto and "L2" not in (ag.get("auto_approve") or [])
-        if raises or gains_auto:
-            what_ru = ([f"поднять уровень до {new_level}"] if raises else []) + (["включить «не спрашивать» для планов L2"] if gains_auto else [])
-            what_en = ([f"raise the level to {new_level}"] if raises else []) + (["turn on “don't ask” for L2 plans"] if gains_auto else [])
+        gains_run = body.get("auto_run") is True and not ag.get("auto_run")
+        if raises or gains_auto or gains_run:
+            what_ru = ([f"поднять уровень до {new_level}"] if raises else []) + (["включить «не спрашивать» для планов L2"] if gains_auto else []) \
+                + (["запускать тесты, линтер, сборку и установку зависимостей проекта без подтверждения"] if gains_run else [])
+            what_en = ([f"raise the level to {new_level}"] if raises else []) + (["turn on “don't ask” for L2 plans"] if gains_auto else []) \
+                + (["run project tests, lint, build and dependency install without approval"] if gains_run else [])
             _confirm(f"Service Admin: агент «{ag['name']}»: {'; '.join(what_ru)}.", f"Service Admin: agent “{ag['name']}”: {'; '.join(what_en)}.")
     return agent_gateway.set_agent(body)

@@ -397,3 +397,40 @@ class NewAgentOps(unittest.TestCase):
     def test_lang_action_accepts_via(self):
         import opschema
         self.assertIsNone(opschema.validate(operations.OPS["lang.action"]["params"], {"key": "python", "action": "install", "version": "3.12", "via": "uv"}))   # via разрешён
+
+
+class AutoRun(unittest.TestCase):
+    """Переключатель «тесты без подтверждения»: только project.run (install/lint/test/build), для L2 и L3; остальное — с подтверждением."""
+    setUp, _ask, agent, call, tools, code = Contract.setUp, Contract._ask, Contract.agent, Contract.call, Contract.tools, Contract.code
+
+    def _propose(self, a, op, params):
+        r = self.call(a, "plan_changes", operation=op, params=params)
+        self.assertTrue(r["ok"], r)
+        return r["result"]
+
+    def test_l3_agent_runs_tests_without_dialog_but_not_installs(self):
+        a = self.agent("ci", "L3")
+        gw.set_agent({"id": a["id"], "auto_run": True})
+        with mock.patch("projects.resolve", side_effect=lambda x: x):
+            for kind in ("test", "lint", "build", "install"):
+                p = self._propose(a, "project.run", {"project": "/p", "kind": kind})
+                self.assertEqual((p["status"], p["approval"]["mode"]), ("approved", "auto_run"), kind)
+                self.call(a, "cancel_plan", plan_id=p["id"])
+        p = self._propose(a, "package.install", {"name": "jq", "type": "formula"})
+        self.assertEqual(p["status"], "pending")                       # пакеты — по-прежнему с подтверждением
+
+    def test_off_by_default_and_l1_cannot_have_it(self):
+        a = self.agent("x", "L2")
+        with mock.patch("projects.resolve", side_effect=lambda x: x):
+            self.assertEqual(self._propose(a, "project.run", {"project": "/p", "kind": "test"})["status"], "pending")
+        b = self.agent("y", "L1")
+        self.assertFalse(gw.set_agent({"id": b["id"], "auto_run": True})["agent"]["auto_run"])
+
+    def test_enabling_needs_human_confirmation(self):
+        import remote_api
+        a = self.agent("z", "L2")
+        with mock.patch.object(remote_api, "_confirm", side_effect=core.ApiError("refused", code="remote.not_confirmed")) as conf:
+            with self.assertRaises(core.ApiError):
+                remote_api.agent_set({"id": a["id"], "auto_run": True})
+            conf.assert_called_once()
+        self.assertFalse([x for x in gw._load()["agents"] if x["id"] == a["id"]][0].get("auto_run"))
