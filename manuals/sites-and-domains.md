@@ -8,10 +8,12 @@
 
 ## Шаги для набора (выполняете вы в Терминале)
 1. `brew install dnsmasq mkcert nginx` (или кнопками на странице).
-2. Правило для всех `*.test`: добавьте в `$(brew --prefix)/etc/dnsmasq.conf` строку `address=/test/127.0.0.1` и запустите сервис (страница «Пакеты и сервисы»).
+2. Правило для всех `*.test`: добавьте в `$(brew --prefix)/etc/dnsmasq.conf` строку `address=/test/127.0.0.1` и запустите его **от администратора**: `sudo brew services start dnsmasq` (порт 53 — привилегированный). Панель такой сервис видит как «остановлен», это нормально: проверяйте командой `dig +short @127.0.0.1 myapp.test`.
 3. Resolver macOS (нужны права администратора): `sudo mkdir -p /etc/resolver && echo "nameserver 127.0.0.1" | sudo tee /etc/resolver/test`.
 4. Доверенный сертификат: `mkcert -install`, затем `mkcert myapp.test`.
-5. Укажите сертификат в конфиге nginx/Caddy и проксируйте `myapp.test` на порт приложения.
+5. Укажите сертификат в конфиге nginx/Caddy и проксируйте `myapp.test` на порт приложения. Порты 80/443 тоже привилегированные: без `sudo` используйте, например, 8443 (`https://myapp.test:8443`).
+
+Этот сценарий (dnsmasq → resolver → mkcert → nginx → ответ приложения по HTTPS) прогнан на чистой macOS в виртуальной машине.
 
 Строки чек-листа «правило dnsmasq», «resolver» и «корневой сертификат mkcert» панель проверяет по файлам (только чтение).
 

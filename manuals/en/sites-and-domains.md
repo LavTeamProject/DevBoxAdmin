@@ -8,10 +8,12 @@ Two ways; one is enough:
 
 ## Steps for the set (you run them in Terminal)
 1. `brew install dnsmasq mkcert nginx` (or use the buttons on the page).
-2. Rule for every `*.test`: add `address=/test/127.0.0.1` to `$(brew --prefix)/etc/dnsmasq.conf` and start the service ("Packages & services").
+2. Rule for every `*.test`: add `address=/test/127.0.0.1` to `$(brew --prefix)/etc/dnsmasq.conf` and start it **as administrator**: `sudo brew services start dnsmasq` (port 53 is privileged). The panel shows such a service as "stopped"; that is normal — check with `dig +short @127.0.0.1 myapp.test`.
 3. macOS resolver (administrator rights): `sudo mkdir -p /etc/resolver && echo "nameserver 127.0.0.1" | sudo tee /etc/resolver/test`.
 4. Trusted certificate: `mkcert -install`, then `mkcert myapp.test`.
-5. Point nginx/Caddy at the certificate and proxy `myapp.test` to the app port.
+5. Point nginx/Caddy at the certificate and proxy `myapp.test` to the app port. Ports 80/443 are privileged too: without `sudo` use e.g. 8443 (`https://myapp.test:8443`).
+
+This scenario (dnsmasq → resolver → mkcert → nginx → the app answering over HTTPS) was run on a clean macOS virtual machine.
 
 The checklist rows "dnsmasq rule", "resolver" and "mkcert root certificate" are detected by reading files (read-only).
 

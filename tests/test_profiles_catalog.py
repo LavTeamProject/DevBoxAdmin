@@ -83,3 +83,11 @@ class Catalog(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DockerDetect(unittest.TestCase):
+    def test_app_without_cli_counts_as_installed(self):
+        with mock.patch.object(profiles, "_cmd", return_value={"installed": False}), mock.patch("os.path.isdir", side_effect=lambda p: p.endswith("OrbStack.app")):
+            r = profiles._docker()
+        self.assertTrue(r["installed"])
+        self.assertIn("OrbStack.app", r["path"])

@@ -62,7 +62,7 @@ ITEMS = {i["id"]: i for i in [
      "note": "large_download", "install": "later"},
     _f("swiftformat", "SwiftFormat", "swiftformat", "swiftformat"), _f("xcbeautify", "xcbeautify", "xcbeautify", "xcbeautify"),
     # backend / web
-    _f("docker", "Docker / OrbStack", "orbstack", "docker", type="cask", note="choose_runtime"),
+    {"id": "docker", "name": "Docker / OrbStack", "pkg": "orbstack", "type": "cask", "detect": ("docker",), "required": False, "note": "choose_runtime"},
     _f("postgresql", "PostgreSQL", "postgresql@17", "psql", service="postgresql@17"),
     _f("redis", "Redis", "redis", "redis-server", service="redis"),
     _f("mysql", "MySQL", "mysql", "mysql", service="mysql"),
@@ -162,6 +162,17 @@ def _cmd(cmd, args, extra=""):
     if clt_stub(path):  # stub /usr/bin tanpa CLT: jangan dijalankan (membuka dialog Apple)
         return {"installed": False, "note": "needs_clt"}
     return {"installed": True, "version": _version(path, args), "path": path}
+
+
+def _docker():
+    """Команда docker, а если её нет — установленное приложение OrbStack/Docker Desktop: команду `docker` оно создаёт только при первом запуске."""
+    r = _cmd("docker", ("--version",))
+    if r.get("installed"):
+        return r
+    for app in ("/Applications/OrbStack.app", "/Applications/Docker.app"):
+        if os.path.isdir(app):
+            return {"installed": True, "version": None, "path": app, "detail": [os.path.basename(app) + " — запустите один раз: появится команда docker"]}
+    return r
 
 
 def _clt():
@@ -288,6 +299,7 @@ def _ios_runtimes():
 
 DETECTORS = {
     "clt": _clt,
+    "docker": _docker,
     "app": _app,
     "python_server": _python_server,
     "flutter": _flutter,

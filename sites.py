@@ -24,6 +24,16 @@ def hosts_entries(path="/etc/hosts"):
     return out[:200]
 
 
+def _systemd_active(name):
+    """Linux: активен ли системный сервис (systemctl is-active); None, если systemd недоступен."""
+    import subprocess
+    try:
+        r = subprocess.run(["systemctl", "is-active", name], capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return r.stdout.strip() == "active"
+
+
 def _mac_state():
     import svc
     cellar = os.path.join(svc.BREW_PREFIX, "Cellar")
@@ -69,7 +79,7 @@ def sites_info(q=None):
     for pid, formula, is_service in PART:
         inst = formula in installed if mac else bool(shutil.which(formula))
         parts.append({"id": pid, "formula": formula, "installed": inst, "service": is_service,
-                      "running": (running or {}).get(formula) if (mac and is_service and inst) else None})
+                      "running": ((running or {}).get(formula) if mac else _systemd_active(formula)) if (is_service and inst) else None})
     ca = os.path.isfile(os.path.expanduser("~/Library/Application Support/mkcert/rootCA.pem")) if mac else os.path.isfile(os.path.expanduser("~/.local/share/mkcert/rootCA.pem"))
     rule, resolver = _dnsmasq_test(prefix)
     herd = {"installed": False}

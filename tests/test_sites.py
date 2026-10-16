@@ -39,3 +39,14 @@ class Dnsmasq(unittest.TestCase):
             open(q, "w").write("address=/example.com/1.2.3.4\n")
             self.assertTrue(sites.dnsmasq_rule([q, p]))
             self.assertFalse(sites.dnsmasq_rule([q, "/nonexistent"]))
+
+
+class SystemdState(unittest.TestCase):
+    def test_active_parsing(self):
+        from unittest import mock
+        with mock.patch("subprocess.run", return_value=mock.Mock(stdout="active\n")):
+            self.assertTrue(sites._systemd_active("nginx"))
+        with mock.patch("subprocess.run", return_value=mock.Mock(stdout="inactive\n")):
+            self.assertFalse(sites._systemd_active("nginx"))
+        with mock.patch("subprocess.run", side_effect=OSError):
+            self.assertIsNone(sites._systemd_active("nginx"))
