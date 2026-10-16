@@ -209,11 +209,41 @@ tabs.projects = {
       ${d.stashes && d.stashes.length ? `<h2>${esc(t("projects.stashes"))}</h2>
         <pre class="diff">${esc(d.stashes.join("\n"))}</pre>` : ""}
 
+      <div id="projVersions"></div>
+
       <h2>${esc(t("projects.github"))}</h2>
       <div id="projGh"><div class="loading">${esc(t("shell.loading"))}</div></div>`;
     // Blok GitHub juga harus kembali setelah ganti bahasa. Kalau datanya sudah
     // ada di cache, loadGithub hanya menggambar — tanpa request.
     this.loadGithub(d.path);
+    this.loadVersions(d.path);
+  },
+
+  // «Версии для проекта»: что просят файлы проекта и подходит ли активная версия (только чтение файлов).
+  async loadVersions(path) {
+    const host = $("projVersions");
+    if (!host) return;
+    this.ver = this.ver || {};
+    if (!this.ver[path]) {
+      try { this.ver[path] = await api(`/api/projects/versions?path=${encodeURIComponent(path)}`); }
+      catch (e) { host.innerHTML = ""; return; }
+    }
+    if (current !== tabs.projects || tabs.projects.param !== path || !$("projVersions")) return;
+    const items = this.ver[path].items || [];
+    if (!items.length) { host.innerHTML = ""; return; }
+    const row = (i) => {
+      const badge = i.ok === true ? `<span class="badge green">${esc(t("projects.verOk"))}</span>`
+        : i.ok === false ? `<span class="badge amber">${esc(t("projects.verMismatch"))}</span>` : `<span class="badge gray">${esc(t("projects.verUnknown"))}</span>`;
+      const fix = i.ok === true ? "" : i.formula
+        ? (i.formula_installed ? `<span class="muted">${esc(t("projects.verInstalled", { f: i.formula }))}</span>`
+            : `<a class="btn" href="#service:${encodeURIComponent(i.formula)}">${esc(t("projects.verInstall", { f: i.formula }))}</a>`)
+        : `<a href="${esc(i.page)}">${esc(t("projects.verOpen"))}</a>`;
+      return `<tr><td>${esc(i.name)}</td><td class="mono">${esc(i.wanted)}</td><td class="muted">${esc(i.source)}</td><td class="mono">${esc(i.active || "—")}</td><td>${badge}</td><td>${fix}</td></tr>`;
+    };
+    host.innerHTML = `<h2>${esc(t("projects.versions"))}</h2>
+      <table><thead><tr><th>${esc(t("projects.verTool"))}</th><th>${esc(t("projects.verWanted"))}</th><th>${esc(t("projects.verSource"))}</th><th>${esc(t("projects.verActive"))}</th><th></th><th></th></tr></thead>
+      <tbody>${items.map(row).join("")}</tbody></table>
+      <p class="muted">${esc(t("projects.verHint"))}</p>`;
   },
 
   async loadGithub(path) {

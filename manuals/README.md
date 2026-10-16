@@ -13,6 +13,7 @@
 | [connect-ai-agent-linux.md](connect-ai-agent-linux.md) | ИИ-агент на Linux: как человек подтверждает действия (окно или `service-admin approve`), когда канал отключается |
 | [connect-ai-agent-remote.md](connect-ai-agent-remote.md) | Удалённый агент по SSH: ограниченный ключ запускает только мост MCP одного агента |
 | [services-sets-ports.md](services-sets-ports.md) | Страница сервиса с вкладками, наборы сервисов («запустить всё»), порты |
+| [sites-and-domains.md](sites-and-domains.md) | Сайты и домены: Herd, dnsmasq + mkcert + nginx/Caddy, hosts, туннели |
 | [python-and-homebrew.md](python-and-homebrew.md) | Python (версии, по умолчанию без полного пути, pip-пакеты) и пакеты Homebrew (лишние, размер) |
 | [connect-agents-wizards.md](connect-agents-wizards.md) | Страница «AI-доступ»: разделы, мастера и где вы одобряете действия |
 | [remote-api-and-telegram.md](remote-api-and-telegram.md) | Удалённый API для своего приложения, операторы (TOTP) и Telegram-бот |

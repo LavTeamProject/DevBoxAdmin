@@ -130,3 +130,8 @@ Format: **what** — why it was not verified — **how you can help**.
 ### Phase 10: FlyEnv ideas (object page, service sets, ports)
 - Verified: 6 tests of sets/groups/ports (lsof parsing, set statuses, skipping not-installed services, `install` steps, input validation and limits) + a formula-family test; the service page (4 tabs) and language pages (2 tabs), the "Sets" and "Ports" tabs on real Mac data; the 12 new catalog cards exist in Homebrew (formulae and casks checked against local data).
 - Not verified: **starting/stopping sets** (`brew services start/stop`) and installing the missing were not run on the working Mac; the service page on Linux (systemd): the "Versions" tab is empty there, "Sets" are off; ports on Linux through `lsof` see only your own processes without root.
+
+### Phase 10, U5–U8 (projects, sites, attention center)
+- Verified: tests for version-range parsing and project files (a symlink pointing outside is ignored), hosts reading, attention center; smoke harness (`tests/ui_smoke.py`) across pages including `#sites`, `#projects:runs`, `#runs`.
+- Not verified: the "Versions for this project" table on a live project in a browser (only a smoke run was done); the "Install formula" link goes to `#service:<formula>` — installing a not-yet-installed formula from there was not run; **the install buttons for dnsmasq/mkcert/nginx/Caddy** and the `*.test` + HTTPS scenario on a clean system; start/stop of sets from the header; the bell with real outdated packages and failed services (only absence of errors and one live `/api/attention?deep=1` response were checked); Linux view of the new pages.
+- Not implemented: automatic proxy/resolver//etc/hosts setup.

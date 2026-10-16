@@ -377,3 +377,17 @@ span.lang-logo { display: inline-flex; align-items: center; justify-content: cen
 label.opt { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; margin: 6px 0; cursor: pointer; }
 label.opt:has(input:checked) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
 label.opt input { margin-top: 3px; }
+
+/* Быстрые действия в шапке (наборы сервисов) */
+.qa-wrap { position: relative; margin-left: auto; display: inline-flex; }
+.qa-wrap .icon-btn { margin-left: 0; }
+.qa-wrap + .icon-btn { margin-left: 0; }
+.qa-pop { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; min-width: 280px; max-width: 92vw; background: var(--panel, var(--bg)); border: 1px solid var(--border, #8884); border-radius: 10px; padding: 10px; box-shadow: 0 8px 24px #0003; }
+.qa-pop .qa-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; }
+.qa-pop .qa-row .qa-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qa-wrap + .qa-wrap { margin-left: 0; }
+.qa-wrap:has(#attnBtn) { margin-left: auto; }
+.qa-wrap:has(#attnBtn) + .qa-wrap { margin-left: 0; }
+.attn-card { margin-bottom: 14px; }
+.attn-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; }
+.attn-row a { flex: 1; min-width: 0; }

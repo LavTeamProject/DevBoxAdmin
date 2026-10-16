@@ -161,3 +161,130 @@ Object.assign(I18N.en, {
   "ports.none": "No listening ports found (or lsof is unavailable).",
   "ports.busy": "The service is stopped, but its port is taken by another process: {list}. Stop that process or change the port in the settings.",
 });
+
+Object.assign(I18N.ru, {
+ "projects.versions": "Версии для проекта",
+ "projects.verOk": "подходит",
+ "projects.verMismatch": "не совпадает",
+ "projects.verUnknown": "не определить",
+ "projects.verInstalled": "{f} уже установлена",
+ "projects.verInstall": "Установить {f}",
+ "projects.verOpen": "Открыть страницу",
+ "projects.verTool": "Инструмент",
+ "projects.verWanted": "Просит проект",
+ "projects.verSource": "Откуда",
+ "projects.verActive": "Сейчас активна",
+ "projects.verHint": "Панель только читает файлы проекта (.nvmrc, package.json, .python-version и др.) и ничего не запускает. Версия «не определить» — например lts/* или latest."
+});
+Object.assign(I18N.en, {
+ "projects.versions": "Versions for this project",
+ "projects.verOk": "matches",
+ "projects.verMismatch": "mismatch",
+ "projects.verUnknown": "can't tell",
+ "projects.verInstalled": "{f} is already installed",
+ "projects.verInstall": "Install {f}",
+ "projects.verOpen": "Open page",
+ "projects.verTool": "Tool",
+ "projects.verWanted": "Project asks",
+ "projects.verSource": "Source",
+ "projects.verActive": "Active now",
+ "projects.verHint": "The panel only reads project files (.nvmrc, package.json, .python-version, …) and runs nothing. “Can't tell” means e.g. lts/* or latest."
+});
+
+Object.assign(I18N.ru, {"qa.title": "Быстрые действия", "qa.sets": "Наборы сервисов", "qa.all": "Все наборы и порты →"});
+Object.assign(I18N.en, {"qa.title": "Quick actions", "qa.sets": "Service sets", "qa.all": "All sets and ports →"});
+
+Object.assign(I18N.ru, {
+ "nav.sites": "Сайты и домены",
+ "sites.intro": "Локальные домены вида myapp.test с HTTPS: что уже есть и чего не хватает. Панель только показывает состояние и ставит компоненты; /etc/hosts, resolver и конфиги прокси она не меняет.",
+ "sites.ok": "готово",
+ "sites.todo": "нужно",
+ "sites.running": "запущен",
+ "sites.stopped": "остановлен",
+ "sites.installed": "установлен",
+ "sites.notInstalled": "не установлен",
+ "sites.manage": "Управлять",
+ "sites.part.dnsmasq": "локальный DNS: *.test → 127.0.0.1",
+ "sites.part.mkcert": "сертификаты, которым доверяет браузер",
+ "sites.part.nginx": "прокси и веб-сервер",
+ "sites.part.caddy": "прокси с автоматическим HTTPS",
+ "sites.herd": "Сайты Herd",
+ "sites.thSite": "Сайт",
+ "sites.thNames": "Имена",
+ "sites.thComp": "Компонент",
+ "sites.thWhy": "Для чего",
+ "sites.thState": "Состояние",
+ "sites.openHerd": "Открыть Herd (PHP, изоляция, прокси) →",
+ "sites.noHerd": "Herd не установлен. Для PHP-сайтов он ставится одним кликом на странице «Начало работы»; для остальных проектов нужен чек-лист ниже.",
+ "sites.checklist": "Локальные домены и HTTPS",
+ "sites.checklistNote": "Достаточно либо Herd, либо набора dnsmasq + mkcert + nginx или Caddy. Шаги настройки (правило *.test, resolver, сертификаты, проксирование) описаны в мануале «Сайты и домены»; панель сама их не выполняет.",
+ "sites.stepRule": "dnsmasq: правило address=/test/127.0.0.1",
+ "sites.stepRuleHint": "в dnsmasq.conf",
+ "sites.stepResolver": "/etc/resolver/test",
+ "sites.stepResolverHint": "нужны права администратора",
+ "sites.stepCa": "Корневой сертификат mkcert установлен",
+ "sites.stepCaHint": "mkcert -install",
+ "sites.tunnels": "Туннели",
+ "sites.openTunnels": "Управление туннелями cloudflared →",
+ "sites.noCf": "cloudflared не установлен.",
+ "sites.hostsNote": "Только чтение. Показаны пользовательские записи (без localhost и служебных).",
+ "sites.noHosts": "Своих записей нет."
+});
+Object.assign(I18N.en, {
+ "nav.sites": "Sites & domains",
+ "sites.intro": "Local domains like myapp.test with HTTPS: what is ready and what is missing. The panel only shows status and installs components; it does not change /etc/hosts, the resolver or proxy configs.",
+ "sites.ok": "ready",
+ "sites.todo": "needed",
+ "sites.running": "running",
+ "sites.stopped": "stopped",
+ "sites.installed": "installed",
+ "sites.notInstalled": "not installed",
+ "sites.manage": "Manage",
+ "sites.part.dnsmasq": "local DNS: *.test → 127.0.0.1",
+ "sites.part.mkcert": "certificates the browser trusts",
+ "sites.part.nginx": "proxy and web server",
+ "sites.part.caddy": "proxy with automatic HTTPS",
+ "sites.herd": "Herd sites",
+ "sites.thSite": "Site",
+ "sites.thNames": "Names",
+ "sites.thComp": "Component",
+ "sites.thWhy": "Purpose",
+ "sites.thState": "State",
+ "sites.openHerd": "Open Herd (PHP, isolation, proxies) →",
+ "sites.noHerd": "Herd is not installed. For PHP sites it installs in one click on “Getting started”; for other projects use the checklist below.",
+ "sites.checklist": "Local domains and HTTPS",
+ "sites.checklistNote": "Either Herd, or dnsmasq + mkcert + nginx or Caddy is enough. The setup steps (*.test rule, resolver, certificates, proxying) are described in the “Sites & domains” manual; the panel does not run them itself.",
+ "sites.stepRule": "dnsmasq: rule address=/test/127.0.0.1",
+ "sites.stepRuleHint": "in dnsmasq.conf",
+ "sites.stepResolver": "/etc/resolver/test",
+ "sites.stepResolverHint": "needs administrator rights",
+ "sites.stepCa": "mkcert root certificate installed",
+ "sites.stepCaHint": "mkcert -install",
+ "sites.tunnels": "Tunnels",
+ "sites.openTunnels": "Manage cloudflared tunnels →",
+ "sites.noCf": "cloudflared is not installed.",
+ "sites.hostsNote": "Read-only. Only custom entries are shown (no localhost or system ones).",
+ "sites.noHosts": "No custom entries."
+});
+
+Object.assign(I18N.ru, {
+ "attn.title": "Требует внимания",
+ "attn.none": "Всё спокойно",
+ "attn.plans": "Планов ждут вашего решения: {n}",
+ "attn.disk": "Мало места на диске: свободно {n} ГБ",
+ "attn.tokens": "Токены агентов истекают в ближайшие 7 дней: {n}",
+ "attn.services": "Сервисы в ошибке: {n}",
+ "attn.outdated": "Устаревших пакетов Homebrew: {n}"
+});
+Object.assign(I18N.en, {
+ "attn.title": "Needs attention",
+ "attn.none": "All quiet",
+ "attn.plans": "Plans waiting for your decision: {n}",
+ "attn.disk": "Low disk space: {n} GB free",
+ "attn.tokens": "Agent tokens expiring within 7 days: {n}",
+ "attn.services": "Services in error: {n}",
+ "attn.outdated": "Outdated Homebrew packages: {n}"
+});
+
+Object.assign(I18N.ru, {"nav.dashboard": "Обзор"});
+Object.assign(I18N.en, {"nav.dashboard": "Overview"});

@@ -22,7 +22,8 @@ function applyNav(d) {
   if (current === tabs.langs && $("langGrid")) tabs.langs.render();
 }
 
-const langHref = (key) => (key === "php" || key === "node" ? `#${key}` : `#lang-${key}`);
+// Flutter/Dart живут в одном месте — «Мобильная разработка» (там FVM и версии SDK); в «Языках» остаётся ссылка
+const langHref = (key) => (key === "php" || key === "node" ? `#${key}` : key === "flutter" || key === "dart" ? "#mobile" : `#lang-${key}`);
 
 async function initRuntimes() {
   // возможности платформы (Фаза 6, Л0): страницы без возможностей скрываются; сбой запроса — ничего не скрываем

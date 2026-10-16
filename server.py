@@ -38,6 +38,7 @@ import mobile_ops
 import operations
 import plans
 import profiles
+import project_versions
 import projects
 import ptyterm
 import runner_spawn
@@ -49,6 +50,8 @@ import report
 import setup
 import snapshots
 import stats
+import attention
+import sites
 import svc
 import uihelpers
 import vm
@@ -137,6 +140,8 @@ GET_ROUTES = {
     "/api/service-sets": service_sets.list_sets,
     "/api/ports": ports.listening,
     "/api/herd": lambda q: herdphp.herd_info(),
+    "/api/sites": sites.sites_info,
+    "/api/attention": attention.attention,
     "/api/herd/logs": herdphp.herd_logs,
     "/api/herd/suggest": herdphp.herd_suggest,
     "/api/herd/new-options": herdphp.herd_new_options,
@@ -172,6 +177,7 @@ GET_ROUTES = {
     "/api/projects/diffstat": projects.project_diffstat,
     "/api/projects/editors": lambda q: {"editors": herdphp.installed_editors()},
     "/api/projects/github": projects.github_info,
+    "/api/projects/versions": project_versions.project_versions,
     "/api/agents": agents.sessions_info,
     "/api/job": lambda q: get_job(q.get("id", ""), int(q.get("offset", 0) or 0)),
 }

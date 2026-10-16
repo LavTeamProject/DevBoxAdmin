@@ -111,7 +111,7 @@ function xcodeCard(x) {
         [t("mobile.xcode.active"), x.active ? `${esc(x.active.name)} ${esc(x.version || "")}` : `<span class="muted">${esc(t("mobile.xcode.none"))}</span>`],
         [t("mobile.xcode.license"), lic],
         [t("mobile.xcode.clt"), x.clt.installed ? `${monoPath(x.clt.path)}` : `<span class="muted">${esc(t("common.absent"))}</span>`],
-        [t("mobile.xcode.xcodes"), x.xcodes_cli ? monoPath(x.xcodes_cli) : `<span class="muted">${esc(t("common.absent"))}</span>`],
+        [t("mobile.xcode.xcodes"), x.xcodes_cli ? monoPath(x.xcodes_cli) : absentInstall("xcodes")],
       ])}
       ${x.clt.only_clt ? `<div class="note" style="margin-top:8px">${esc(t("mobile.xcode.cltOnly"))}</div>` : ""}
       ${x.first_launch && !x.first_launch.done ? `<div class="actions" style="justify-content:flex-start;margin-top:10px">
@@ -162,8 +162,11 @@ function simActions(dv) {
   return "";
 }
 
+// «Отсутствует» + кнопка «Поставить» (Homebrew): раньше у отсутствующего инструмента не было следующего шага
+const absentInstall = (formula, type = "formula") => `<span class="muted">${esc(t("common.absent"))}</span> ${btn(t("profiles.install"), "pkg", { name: formula, type, action: "install" }, "go")}`;
+
 function flutterCard(f) {
-  if (!f.sdk) return `<div class="warn">${esc(t("mobile.flutter.none"))}</div>`;
+  if (!f.sdk) return `<div class="warn row" style="gap:10px">${esc(t("mobile.flutter.none"))}<span class="spacer"></span>${btn(t("profiles.install") + " Flutter", "pkg", { name: "flutter", type: "cask", action: "install" }, "go")}</div>`;
   const s = f.sdk;
   const cache = s.cache_present && s.has_dart_sdk
     ? `<span class="badge green">${esc(t("mobile.flutter.cacheOk"))}</span>`
@@ -178,9 +181,9 @@ function flutterCard(f) {
         [t("mobile.flutter.source"), esc(s.source)],
         [t("mobile.flutter.cache"), cache],
         [t("common.path"), monoPath(s.path)],
-        [t("mobile.pods"), f.cocoapods.installed ? `${esc(f.cocoapods.version || "")} ${monoPath(f.cocoapods.path)}` : `<span class="muted">${esc(t("common.absent"))}</span>`],
-        [t("mobile.fastlane"), f.fastlane.installed ? monoPath(f.fastlane.path) : `<span class="muted">${esc(t("common.absent"))}</span>`],
-        [t("mobile.flutter.fvm"), f.fvm.installed ? `${monoPath(f.fvm.path)}` : `<span class="muted">${esc(t("common.absent"))}</span>`],
+        [t("mobile.pods"), f.cocoapods.installed ? `${esc(f.cocoapods.version || "")} ${monoPath(f.cocoapods.path)}` : absentInstall("cocoapods")],
+        [t("mobile.fastlane"), f.fastlane.installed ? monoPath(f.fastlane.path) : absentInstall("fastlane")],
+        [t("mobile.flutter.fvm"), f.fvm.installed ? `${monoPath(f.fvm.path)}` : absentInstall("fvm")],
         [t("mobile.flutter.fvmVersions"), f.fvm.versions.length ? chipList(f.fvm.versions) : `<span class="muted small">—</span>`],
       ])}
       <div class="actions" style="justify-content:flex-start;margin-top:10px">
@@ -211,7 +214,7 @@ function androidCard(a) {
       ${kvList([
         [t("mobile.android.sdk"), monoPath(a.sdk_path)],
         [t("mobile.android.licenses"), lic],
-        [t("mobile.android.adb"), a.adb ? `<span class="mono">${esc(a.adb)}</span>` : `<span class="muted">${esc(t("common.absent"))}</span>`],
+        [t("mobile.android.adb"), a.adb ? `<span class="mono">${esc(a.adb)}</span>` : absentInstall("android-platform-tools", "cask")],
         [t("mobile.android.platforms"), a.platforms.length ? chipList(a.platforms) : `<span class="muted small">—</span>`],
         [t("mobile.android.buildTools"), a.build_tools.length ? chipList(a.build_tools) : `<span class="muted small">—</span>`],
         [t("mobile.android.images"), a.system_images.length ? chipList(a.system_images.map((i) => `${i.api} ${i.variant}`)) : `<span class="muted small">—</span>`],

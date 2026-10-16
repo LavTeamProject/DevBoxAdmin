@@ -26,7 +26,7 @@ ROUTES = [
     ("#langs", "langs", False), ("#lang-python", "langs", False), ("#lang-python:packages", "langs", False), ("#lang-go", "langs", False), ("#lang-ruby", "langs", False), ("#php", "langs", False), ("#node", "langs", False),
     ("#packages", "packages", False), ("#service:cloudflared", "packages", False), ("#service:cloudflared:versions", "packages", False),
     ("#service:cloudflared:config", "packages", False), ("#service:cloudflared:log", "packages", False), ("#docker", "docker", False), ("#mobile", "mobile", False),
-    ("#projects", "projects", False), ("#runs", "runs", False), ("#herd", "herd", False),
+    ("#projects", "projects", True), ("#projects:runs", "projects", True), ("#runs", "projects", True), ("#sites", "sites", False), ("#herd", "herd", False),
     ("#agents", "agents", False),
     ("#connect", "connect", False), ("#connect:agents", "connect", False), ("#connect:approvals", "connect", False), ("#connect:operators", "connect", False),
     ("#connect:channels", "connect", False), ("#connect:catalog", "connect", False),

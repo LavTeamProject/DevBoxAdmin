@@ -159,6 +159,10 @@ function approverCard(tab) {
   return `<div class="card" style="margin-bottom:14px"><div class="name">${esc(t("cn.who.title"))}</div>
     <p class="muted small">${esc(t("cn.who.text"))}</p>
     <label class="opt"><input type="checkbox" checked disabled><span><b>${esc(t("cn.who.local"))}</b><span class="muted small" style="display:block">${esc(t("cn.who.localText"))}</span></span></label>
+    ${tab.plans ? `<div class="row" style="gap:8px;margin:2px 0 8px 26px;flex-wrap:wrap"><label class="small">${esc(t("plans.mode"))} <select id="planMode">
+        <option value="dialog" ${tab.plans.policy.approval === "dialog" ? "selected" : ""}>${esc(t("plans.mode.dialog"))}</option>
+        <option value="panel" ${tab.plans.policy.approval === "panel" ? "selected" : ""}>${esc(t("plans.mode.panel"))}</option></select></label>
+      ${tab.plans.policy.approval === "panel" ? `<span class="warn small">${esc(t("plans.mode.panelWarn"))}</span>` : ""}</div>` : ""}
     <label class="opt"><input type="checkbox" id="apprRemote" ${on ? "checked" : ""}><span><b>${esc(t("cn.who.remote"))}</b>
       <span class="muted small" style="display:block">${esc(t("cn.who.remoteText"))}</span>
       <span class="small" style="display:block;margin-top:4px">${ops.length ? esc(t("cn.who.ops", { list: ops.map((o) => o.name + (o.telegram_chat_id ? " (Telegram)" : "")).join(", ") })) : `<span class="warn-text">${esc(t("cn.who.noOps"))}</span> <a href="#connect:operators">${esc(t("cn.sec.operators"))}</a>`}
@@ -231,11 +235,6 @@ function plansSection(pl) {
   return `<h2>${esc(t("plans.title"))} ${pl.pending ? `<span class="badge amber">${pl.pending}</span>` : ""}</h2>
     <div class="muted small" style="margin-bottom:8px">${esc(t("plans.intro"))}</div>
     ${cards || `<div class="muted small" style="margin-bottom:8px">${esc(t("plans.none"))}</div>`}
-    <div class="row" style="gap:8px;margin:8px 0 12px;flex-wrap:wrap">
-      <label class="small">${esc(t("plans.mode"))} <select id="planMode">
-        <option value="dialog" ${pl.policy.approval === "dialog" ? "selected" : ""}>${esc(t("plans.mode.dialog"))}</option>
-        <option value="panel" ${pl.policy.approval === "panel" ? "selected" : ""}>${esc(t("plans.mode.panel"))}</option></select></label>
-      ${pl.policy.approval === "panel" ? `<span class="warn small">${esc(t("plans.mode.panelWarn"))}</span>` : ""}</div>
     ${rows ? `<div class="card"><div class="table-wrap"><table><thead><tr><th>${esc(t("ops.col.op"))}</th><th>${esc(t("ops.col.level"))}</th><th>${esc(t("audit.col.result"))}</th><th>${esc(t("audit.col.time"))}</th></tr></thead><tbody>${rows}</tbody></table></div></div>` : ""}`;
 }
 

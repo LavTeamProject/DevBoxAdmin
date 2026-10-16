@@ -13,6 +13,7 @@ Step-by-step instructions for people. All of them were checked on a real system;
 | [connect-ai-agent-linux.md](connect-ai-agent-linux.md) | An AI agent on Linux: how a human approves actions (a window or `service-admin approve`), when the channel is disabled |
 | [connect-ai-agent-remote.md](connect-ai-agent-remote.md) | A remote agent over SSH: a restricted key starts only one agent's MCP bridge |
 | [services-sets-ports.md](services-sets-ports.md) | The service page with tabs, service sets ("start all"), ports |
+| [sites-and-domains.md](sites-and-domains.md) | Sites & domains: Herd, dnsmasq + mkcert + nginx/Caddy, hosts, tunnels |
 | [python-and-homebrew.md](python-and-homebrew.md) | Python (versions, default without a full path, pip packages) and Homebrew packages (unneeded, size) |
 | [connect-agents-wizards.md](connect-agents-wizards.md) | The “AI access” page: sections, wizards and where you approve actions |
 | [remote-api-and-telegram.md](remote-api-and-telegram.md) | The remote API for your own app, operators (TOTP) and the Telegram bot |

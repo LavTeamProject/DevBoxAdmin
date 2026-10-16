@@ -44,8 +44,7 @@ tabs.docker = {
     if (!e.cli) { view.innerHTML = `<div class="warn">${esc(t("dk.noCli"))}</div>`; return; }
     if (!silent || !$("dkBody")) {
       view.innerHTML = `<div id="dkEngine"></div>
-        <div class="pills" style="margin:14px 0" id="dkNav">${dkTabs().map(([k, l]) =>
-          `<a class="pill-link ${k === sub || (sub === "container" && k === "containers") || (sub === "new-compose" && k === "compose") ? "active" : ""}" href="#docker${k ? ":" + k : ""}">${l}</a>`).join("")}</div>
+        <div id="dkNav" style="margin-top:14px">${objTabs("docker", dkTabs(), sub === "container" ? "containers" : sub === "new-compose" ? "compose" : sub, true)}</div>
         <div id="dkBody"><div class="loading">${esc(t("dk.loading"))}</div></div>`;
     }
     this.renderEngine(e);
