@@ -63,7 +63,8 @@ async function fillBrewVersions(box, url, noteKey = "lang.brewVersionsNote") {
     ${v.available.length ? `<div class="table-wrap"><table><tr><th>${esc(t("lang.thFormula"))}</th><th>${esc(t("common.version"))}</th><th>${esc(t("pkg.thOrigin"))}</th><th></th></tr>
     ${v.available.map((r) => `<tr><td><code>${esc(r.formula)}</code></td><td>${esc(r.latest ? t("lang.latest") : r.version)}</td>
       <td>${r.installed ? `<span class="badge green">${esc(t("lang.installedBadge"))}</span>` : `<span class="muted small">${esc(t("lang.availableBadge"))}</span>`}</td>
-      <td><div class="actions">${r.installed ? btn(t("lang.uninstall"), "langBrewAct", { formula: r.formula, action: "uninstall", confirm: t("lang.confirmUninstall", { name: r.formula }) }, "danger")
+      <td><div class="actions">${r.installed && r.default ? `<span class="badge green">${esc(t("app.badge.default"))}</span>`
+        : r.installed ? btn(t("lang.uninstall"), "langBrewAct", { formula: r.formula, action: "uninstall", confirm: t("lang.confirmUninstall", { name: r.formula }) }, "danger")
         : btn(t("profiles.install"), "langBrewAct", { formula: r.formula, action: "install" }, "go")}</div></td></tr>`).join("")}</table></div>`
       : `<div class="empty">${esc(t("lang.noVersions"))}</div>`}`;
 }

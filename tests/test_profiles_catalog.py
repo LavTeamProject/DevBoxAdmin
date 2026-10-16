@@ -76,13 +76,11 @@ class Catalog(unittest.TestCase):
 
     def test_plan_for_a_new_stack_only_lists_missing_required_items(self):
         d = self.fake_catalog({"php"}, {})
-        with mock.patch.object(profiles, "catalog", return_value=d), mock.patch.object(profiles, "_brew_bin", return_value="/x/brew"):
+        # профили macOS явно: на Linux (CI на Ubuntu) PROFILES — другой список, и backend-php там нет
+        with mock.patch.object(profiles, "catalog", return_value=d), mock.patch.object(profiles, "_brew_bin", return_value="/x/brew"), \
+             mock.patch.object(profiles, "PROFILES", profiles.PROFILES_MAC):
             p = profiles.plan({"profile": "backend-php", "scope": "required"})
         self.assertEqual([i["id"] for i in p["items"] if i["action"] == "install"], ["composer"])
-
-
-if __name__ == "__main__":
-    unittest.main()
 
 
 class DockerDetect(unittest.TestCase):
@@ -91,3 +89,7 @@ class DockerDetect(unittest.TestCase):
             r = profiles._docker()
         self.assertTrue(r["installed"])
         self.assertIn("OrbStack.app", r["path"])
+
+
+if __name__ == "__main__":
+    unittest.main()

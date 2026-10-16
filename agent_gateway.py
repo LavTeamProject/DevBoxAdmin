@@ -286,7 +286,8 @@ def t_list_capabilities(p, agent=None):
     except Exception:  # noqa: BLE001
         pass
     return {"agent": {"id": agent["id"], "name": agent["name"], "level": agent["level"]} if agent else None,
-            "tools": [{"name": n, "level": d["level"], "read_only": True, "description": d["description"]} for n, d in TOOLS.items()],
+            "tools": [{"name": n, "level": d["level"], "read_only": d["level"] == "L1", "description": d["description"],
+                       "available": bool(agent) and LEVELS.get(agent["level"], 0) >= LEVELS.get(d["level"], 9)} for n, d in TOOLS.items()],
             "limits": {"rate_per_minute": RATE_PER_MIN, "max_result_kb": MAX_RESULT_BYTES // 1000},
             "profiles": [pr["id"] for pr in profiles.PROFILES],
             "operations": _operations_summary(agent),
@@ -432,6 +433,93 @@ def t_get_job_status(p, agent=None):
             "started": j["started"], "output_tail": lines, "output_truncated": len(j["lines"]) > len(lines)}
 
 
+def t_list_projects(p, agent=None):
+    """Проекты панели с их пресетами (какие команды test/build можно запустить через project.run)."""
+    import projects
+    presets = projects._read_registry_file().get("presets", {})  # noqa: SLF001
+    out = []
+    for it in projects.list_projects({})["projects"]:
+        pre = presets.get(os.path.realpath(it["path"])) or {}
+        out.append({"path": it["path"], "name": it["name"], "worktree": it["worktree"],
+                    "runnable": [k for k in ("install", "lint", "test", "build") if pre.get(k)],
+                    "preset": {k: pre.get(k, "") for k in ("install", "lint", "test", "build", "dev")}})
+    return {"projects": out, "count": len(out),
+            "note": "project.run accepts only kinds listed in 'runnable'; the user sets the commands on the project page."}
+
+
+def t_inspect_project_versions(p, agent=None):
+    """Какие версии языков просит проект (.nvmrc, package.json, .python-version, go.mod…) и что активно сейчас."""
+    import project_versions
+    r = project_versions.project_versions({"path": p["path"]})
+    return {"path": r["path"], "requirements": r["items"],
+            "note": "ok=false: the active version does not satisfy the project; 'formula' is the Homebrew formula to install with "
+                    "plan_changes operation package.install. ok=null: cannot tell (e.g. lts/*)."}
+
+
+def t_list_runtimes(p, agent=None):
+    """Установленные языки (версия, источник, путь) и языки, которые можно поставить."""
+    import runtimes
+    d = runtimes.detect()
+    return {"installed": [{k: l.get(k) for k in ("key", "name", "version", "source", "path", "formula")} for l in d["langs"]],
+            "installable": [{k: a.get(k) for k in ("key", "name", "formula", "type")} for a in d.get("available", [])]}
+
+
+def t_list_runs(p, agent=None):
+    import runs
+    q = {k: p[k] for k in ("project", "kind", "status") if p.get(k)}
+    q["limit"] = p.get("limit") or 20
+    r = runs.history(q)
+    return {"runs": [{k: x.get(k) for k in ("id", "project", "kind", "command", "started", "duration", "code", "status", "job")} for x in r["runs"]],
+            "total": r["total"]}
+
+
+LOG_CHUNK = 50_000
+SECRET_TOKENS = re.compile(r"(ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|gh[ous]_[A-Za-z0-9]{20,}|glpat-[A-Za-z0-9_-]{16,}|"
+                           r"sk-[A-Za-z0-9_-]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}|npm_[A-Za-z0-9]{30,})")
+
+
+def t_get_run_log(p, agent=None):
+    """Полный лог запуска по частям: offset в байтах, до 50 КБ за вызов (с запасом под JSON), по границе символа UTF-8.
+    Похожие на токены строки (GitHub, GitLab, npm, Slack, AWS, sk-…) маскируются."""
+    import runs
+    rid = p["run_id"]
+    if not re.fullmatch(r"r[0-9a-f]{6}", rid):
+        raise ApiError("Неверный id запуска", code="run.bad_id")
+    path = os.path.join(runs.RUNS_DIR, rid + ".log")
+    try:
+        size = os.path.getsize(path)
+        with open(path, "rb") as f:
+            start = min(int(p.get("offset") or 0), size)
+            f.seek(start)
+            chunk = f.read(LOG_CHUNK + 4)
+    except OSError:
+        raise ApiError("Лог не найден", HTTPStatus.NOT_FOUND, code="run.log_missing") from None
+    lead = 0
+    while lead < min(3, len(chunk)) and (chunk[lead] & 0xC0) == 0x80:    # offset попал внутрь символа — начинаем со следующего
+        lead += 1
+    chunk = chunk[lead:]
+    if len(chunk) > LOG_CHUNK:
+        end = LOG_CHUNK
+        while end > 0 and (chunk[end] & 0xC0) == 0x80:                     # не режем символ посередине
+            end -= 1
+        chunk = chunk[:end]
+    begin = start + lead
+    text = SECRET_TOKENS.sub("<скрыто>", chunk.decode("utf-8", "replace"))
+    return {"run_id": rid, "offset": begin, "next_offset": begin + len(chunk), "size": size, "eof": begin + len(chunk) >= size, "text": text}
+
+
+def t_list_services(p, agent=None):
+    """Установленные сервисы (веб-серверы, БД, кэш, прочие) с состоянием и занятые порты."""
+    import navtree
+    import ports
+    try:
+        listening = ports.listening({})
+    except Exception:  # noqa: BLE001 — порты необязательны
+        listening = {"ports": [], "available": False}
+    return {"services": navtree.nav_services({"refresh": "1"})["groups"],
+            "ports": [{k: x.get(k) for k in ("port", "addr", "cmd", "label", "local_only")} for x in listening.get("ports", [])]}
+
+
 def _pid():
     return {"plan_id": {"type": "string", "pattern": "p[0-9a-f]{8}", "description": "Plan id returned by plan_changes"}}
 
@@ -494,7 +582,8 @@ TOOLS = {
     "list_operations": {"level": "L1", "fn": t_list_operations,
                         "schema": lambda: _schema({"level": {"type": "string", "enum": ["L1", "L2", "L3", "L4"]}, "group": {"type": "string", "maxLength": 30}}),
                         "description": "List the operations the panel can perform on this machine (installs, git, mobile toolchains, backups …) with "
-                                       "their permission level and whether they are available here. A catalog only: agents cannot execute them yet."},
+                                       "their permission level and whether they are available here. Only operations with executable_by_you=true can be proposed with plan_changes; "
+                                       "the rest are executed by the user in the panel."},
     "describe_operation": {"level": "L1", "fn": t_describe_operation,
                            "schema": lambda: _schema({"operation": {"type": "string", "pattern": "[a-z0-9_.]{3,40}"}}, ["operation"]),
                            "description": "Describe one operation precisely: parameter schema, permission level (with escalations), requirements and "
@@ -525,6 +614,25 @@ TOOLS = {
     "list_containers": {"level": "L1", "fn": t_list_containers, "schema": lambda: _schema({}),
                         "description": "List the containers of the LOCAL Docker engine (name, image, state) and the active Docker context. Read-only; "
                                        "unavailable when the context is remote. Use with plan_changes operation docker.container_control (start/stop/restart)."},
+    "list_projects": {"level": "L1", "fn": t_list_projects, "schema": lambda: _schema({}),
+                      "description": "List the projects known to the panel with their test/build preset commands (what project.run can execute). Read-only."},
+    "inspect_project_versions": {"level": "L1", "fn": t_inspect_project_versions,
+                                 "schema": lambda: _schema({"path": {"type": "string", "maxLength": 500, "description": "Project path from list_projects"}}, ["path"]),
+                                 "description": "Show which language versions a project asks for (.nvmrc, package.json engines, .python-version, pyproject, "
+                                                "go.mod, .tool-versions, composer.json…) compared with the active versions, and the Homebrew formula that would fit. "
+                                                "Reads project files only; runs nothing."},
+    "list_runtimes": {"level": "L1", "fn": t_list_runtimes, "schema": lambda: _schema({}),
+                      "description": "List installed language runtimes (version, source, path) and the languages that can be installed. Read-only."},
+    "list_runs": {"level": "L1", "fn": t_list_runs,
+                  "schema": lambda: _schema({"project": {"type": "string", "maxLength": 500}, "kind": {"type": "string", "enum": ["install", "lint", "test", "build", "dev"]},
+                                             "status": {"type": "string", "enum": ["ok", "failed", "timeout", "error"]},
+                                             "limit": {"type": "integer", "minimum": 1, "maximum": 100}}),
+                  "description": "History of project test/build runs, newest first: command, exit code, status, duration, run id. Read-only."},
+    "get_run_log": {"level": "L1", "fn": t_get_run_log,
+                    "schema": lambda: _schema({"run_id": {"type": "string", "pattern": "r[0-9a-f]{6}"}, "offset": {"type": "integer", "minimum": 0}}, ["run_id"]),
+                    "description": "Read the FULL log of a test/build run in chunks of up to 50 KB (use next_offset until eof); token-like secrets are masked. Read-only."},
+    "list_services": {"level": "L1", "fn": t_list_services, "schema": lambda: _schema({}),
+                      "description": "List installed services (web servers, databases, cache/queues, others) with running state, and the listening TCP ports. Read-only."},
     "cancel_job": {"level": "L2", "fn": t_cancel_job, "annotations": _WRITE,
                    "schema": lambda: _schema({"job_id": {"type": "string", "description": "Job id returned by execute_plan"}}, ["job_id"]),
                    "description": "Stop a running job that was started by one of YOUR OWN plans (use the job id from execute_plan). Other jobs cannot be cancelled. "
@@ -566,8 +674,11 @@ def _validate_legacy(schema, params):
 
 # ---------------------------------------------------------------- обработка запроса (его же вызывает сокет)
 
-def _err(code, message):
-    return {"ok": False, "error": {"code": code, "message": message}}
+def _err(code, message, params=None):
+    e = {"code": code, "message": message}
+    if params:
+        e["params"] = params
+    return {"ok": False, "error": e}
 
 
 def handle(req):
@@ -606,7 +717,8 @@ def handle(req):
             raise ValueError("result too large")
         outcome, resp = "ok", {"ok": True, "result": result}
     except ApiError as e:
-        outcome, resp = f"error: {e}", _err("failed", str(e))
+        # точный код (plan.stale, plan.busy, ops.no_preset…): агент должен различать причины, а не видеть одно «failed»
+        outcome, resp = f"error: {e}", _err(e.code or "failed", str(e), getattr(e, "params", None) or None)
     except Exception as e:  # noqa: BLE001
         outcome, resp = f"error: {e}", _err("internal", str(e)[:200])
     audit.record(f"agent:{name}", params, outcome, (time.time() - t0) * 1000, extra={"agent": agent["name"], "agent_id": agent["id"]})
@@ -679,4 +791,4 @@ def remote_info(q=None):
         if q.get("key"):
             ssh["authorized_line"] = authorized_line(agent_id, q["key"])
     return {"types": [{"id": "ssh", "status": "available" if ssh["listening"] else "needs_sshd"},
-                      {"id": "api", "status": "planned"}, {"id": "telegram", "status": "planned"}], "ssh": ssh}
+                      {"id": "api", "status": "available"}, {"id": "telegram", "status": "available"}], "ssh": ssh}   # оба реализованы (ADR-0003), включаются в панели

@@ -381,6 +381,28 @@ def compose_files():
     return {f for p in projects for f in p.get("ConfigFiles", "").split(",") if f}
 
 
+def compose_project(name):
+    """Файлы известного Docker проекта compose (из `docker compose ls -a`) или None. Агенту пути файлов не передаются вообще."""
+    for p in loads_or(output([DOCKER, "compose", "ls", "-a", "--format", "json"]), []):
+        if p.get("Name") == name:
+            return [f for f in (p.get("ConfigFiles") or "").split(",") if f]
+    return None
+
+
+def files_digest(paths):
+    """sha256 содержимого файлов compose: попадает в план, и подмена файла после одобрения делает план устаревшим (plan.stale)."""
+    import hashlib
+    h = hashlib.sha256()
+    for f in sorted(paths):
+        h.update(f.encode() + b"\0")
+        try:
+            with open(f, "rb") as fh:
+                h.update(fh.read())
+        except OSError:
+            h.update(b"<missing>")
+    return h.hexdigest()
+
+
 def compose_read(q):
     path = q.get("path", "")
     if path not in compose_files():

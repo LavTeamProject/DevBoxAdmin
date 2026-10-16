@@ -53,7 +53,7 @@ class RemoteSsh(unittest.TestCase):
             r = gw.remote_info({})
             self.assertEqual([t["id"] for t in r["types"]], ["ssh", "api", "telegram"])
             self.assertEqual(r["types"][0]["status"], "available")
-            self.assertEqual(r["types"][1]["status"], "planned")
+            self.assertEqual(r["types"][1]["status"], "available")   # удалённый API и Telegram реализованы
             with self.assertRaises(core.ApiError):
                 gw.remote_info({"agent": "a1b2c3d"})
 

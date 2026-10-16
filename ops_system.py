@@ -8,6 +8,7 @@
 """
 import os
 import sys
+from http import HTTPStatus
 
 import brewsvc
 import dockerx
@@ -128,9 +129,56 @@ _reg("node.uninstall", "Uninstall a Node.js version", "nvm uninstall <version>",
      lambda p: herdphp.node_action({"action": "uninstall", "version": p["version"]}), requires=("nvm",), rollback="node.install")
 _reg("lang.action", "Language runtime action", "Actions of the Languages page: select/default version, install/update, pipx and Go tools, cache cleaning, certificate fix (Python, Go, Rust, Java, Ruby)", "L2", "lang",
      opschema.obj({"key": {"type": "string", "enum": sorted(runtimes.ACTIONS)}, "action": {"type": "string", "maxLength": 40},
-                   "id": {"type": "string", "maxLength": 200}, "name": {"type": "string", "maxLength": 200}, "version": {"type": "string", "maxLength": 40}}, ["key", "action"]),
+                   "id": {"type": "string", "maxLength": 200}, "name": {"type": "string", "maxLength": 200}, "version": {"type": "string", "maxLength": 40},
+                   "via": {"type": "string", "enum": ["uv", "brew"]}}, ["key", "action"]),
      lambda p: runtimes.lang_action(p), requires=("homebrew",),
-     escalations=[{"when": {"action": a}, "level": "L3"} for a in ("pipx-uninstall", "remove-tool", "clean-modcache", "clean-cache", "cert-fix")])
+     escalations=[{"when": {"action": a}, "level": "L3"} for a in ("pipx-uninstall", "remove-tool", "clean-modcache", "clean-cache", "cert-fix", "npm-uninstall", "gem-uninstall", "pip-uninstall")])
+
+# Узкие операции для агентов (ревью 2026-10, шаг 4): выбор основной версии языка и установка Python — без широкого lang.action
+# (в нём есть удаление версий и pip-uninstall). Всё — план + подтверждение человеком, как и прочие операции агента.
+SELECT_KEYS = ("node", "python", "go", "java", "ruby", "php")
+
+
+def _selected(key):
+    if key == "php":
+        return herdphp.php_info().get("selected")
+    return runtimes.INFO[key]({}).get("selected")
+
+
+def _install_ids(key):
+    if key == "php":
+        return [v["id"] for v in herdphp.php_info().get("versions", [])]
+    return [i["id"] for i in runtimes.INFO[key]({}).get("installs") or []]
+
+
+def _lang_select_plan(p):
+    ids = _install_ids(p["key"])
+    if p["id"] not in ids:
+        raise ApiError("Unknown install id for this language; use list_runtimes or the language page", HTTPStatus.NOT_FOUND,
+                       code="lang.unknown_install", key=p["key"], known=", ".join(ids[:20]))
+    cur = _selected(p["key"])
+    return {"will_change": cur != p["id"], "current": cur, "would_run": f"make {p['id']} the default {p['key']} (~/.service-admin/bin)"}
+
+
+def _lang_select_exec(p):
+    if p["key"] == "php":
+        return {"done": True, "result": herdphp.php_select({"id": p["id"]})}
+    return {"done": True, "result": runtimes.lang_action({"key": p["key"], "action": "select", "id": p["id"]})}
+
+
+_register("lang.select", "Make an installed language version the default",
+          "Point the shims in ~/.service-admin/bin (or JAVA_HOME) to an INSTALLED version of Node, Python, Go, Java, Ruby or PHP. "
+          "Install the version first (package.install node@22 / openjdk@21, python.install); install ids come from list_runtimes / the language page.",
+          "L2", "lang", opschema.obj({"key": {"type": "string", "enum": list(SELECT_KEYS)}, "id": {"type": "string", "maxLength": 200}}, ["key", "id"]),
+          idempotent=True, rollback="lang.select with the previous id (see 'current' in the plan)", verify="the language page shows the id as the default",
+          plan=_lang_select_plan, execute=_lang_select_exec, verify_fn=lambda p: {"ok": _selected(p["key"]) == p["id"], "selected": _selected(p["key"])},
+          result="immediate")
+_register("python.install", "Install a Python version", "uv python install X.Y (no admin rights) or brew install python@X.Y", "L2", "lang",
+          opschema.obj({"version": {"type": "string", "enum": list(runtimes.PY_VERSIONS)}, "via": {"type": "string", "enum": ["uv", "brew"]}}, ["version", "via"]),
+          requires=("homebrew", "disk_5gb"), idempotent=True, rollback="uninstall that Python on the Python page",
+          verify="the version appears among Python installs",
+          plan=lambda p: {"will_change": True, "would_run": f"uv python install {p['version']}" if p["via"] == "uv" else f"brew install python@{p['version']}"},
+          execute=lambda p: _wrap(runtimes.python_install({"version": p["version"], "via": p["via"]})))
 
 # ---------------------------------------------------------------- Docker
 
@@ -172,6 +220,29 @@ _register("docker.container_control", "Start, stop or restart a container", "doc
 _reg("docker.prune", "Prune unused Docker data", "docker <kind> prune: images, containers, volumes, networks, build cache or everything", "L4", "docker",
      opschema.obj({"what": {"type": "string", "enum": ["image-prune", "image-prune-all", "container-prune", "volume-prune", "network-prune", "builder-prune", "system-prune"]}}, ["what"]),
      lambda p: dockerx.action({"action": p["what"]}), requires=("docker",), rollback="none: deleted data is gone")
+def _compose_control_plan(p):
+    files = dockerx.compose_project(p["target"])
+    if files is None:
+        raise ApiError("Unknown compose project; only projects listed by `docker compose ls` can be controlled", HTTPStatus.NOT_FOUND,
+                       code="docker.compose_unknown_project", target=p["target"])
+    return {"will_change": True, "would_run": f"docker compose -p {p['target']} {p['action'].replace('compose-', '')}",
+            "files": files, "files_sha256": dockerx.files_digest(files)}
+
+
+def _compose_control_exec(p):
+    files = dockerx.compose_project(p["target"])
+    if files is None:
+        raise ApiError("Unknown compose project", HTTPStatus.NOT_FOUND, code="docker.compose_unknown_project", target=p["target"])
+    return dockerx.action({"action": p["action"], "target": p["target"], "files": files})
+
+
+_reg("docker.compose_control", "Bring a Docker Compose project up, stop or restart it",
+     "up -d / up --build / start / stop / restart / pull / build of a compose project already known to Docker (docker compose ls) on the LOCAL "
+     "engine, using its own registered compose files. Never down: containers, networks and volumes stay.",
+     "L2", "docker", opschema.obj({"action": {"type": "string", "enum": ["compose-up", "compose-up-build", "compose-start", "compose-stop", "compose-restart", "compose-pull", "compose-build"]},
+                                   "target": TARGET}, ["action", "target"]),
+     _compose_control_exec, requires=("docker",), plan=_compose_control_plan,
+     idempotent=True, rollback="the opposite action (stop ↔ start/up)", verify="docker compose ps of the project")
 _reg("docker.compose", "Docker Compose project action", "up, start, stop, restart, down, down -v (also removes volumes), pull, build, up --build", "L3", "docker",
      opschema.obj({"action": {"type": "string", "enum": ["compose-up", "compose-start", "compose-stop", "compose-restart", "compose-down", "compose-down-v", "compose-pull", "compose-build", "compose-up-build"]},
                    "target": TARGET, "files": {"type": "array", "items": {"type": "string", "maxLength": 400}, "maxItems": 10}}, ["action", "target"]),

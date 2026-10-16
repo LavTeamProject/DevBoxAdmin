@@ -530,7 +530,11 @@ def is_registered(path):
 # `bash -c` и т.п. — и работает и при сохранении пресета, и при запуске (файл пресетов можно подправить руками).
 RUN_TOOLS = {"flutter", "dart", "fvm", "npm", "npx", "pnpm", "yarn", "bun", "node", "deno", "cargo", "go", "make",
              "gradle", "mvn", "xcodebuild", "fastlane", "pod", "swift", "python3", "pytest", "uv", "poetry", "ruby",
-             "bundle", "rake", "composer", "php", "phpunit", "dotnet"}
+             "bundle", "rake", "composer", "php", "phpunit", "dotnet",
+             # зависимости и линтеры (ревью 2026-10)
+             "pip3", "ruff", "golangci-lint", "rubocop", "swiftlint", "mix"}
+# Виды команд пресета: install/lint/test/build — конечные (лимит 30 мин), dev — dev-сервер (работает, пока не остановят)
+PRESET_KINDS = ("install", "lint", "test", "build", "dev")
 RUN_INTERPRETERS = {"python3", "node", "ruby", "php", "deno"}
 RUN_EVAL_FLAGS = {"-c", "-e", "--eval", "-p", "--print", "-r", "--require", "--import", "-x"}  # «выполни это выражение»
 
@@ -583,16 +587,72 @@ def _check_cmd(name, value, project=None):
 
 
 def presets_get(path):
-    return _read_registry_file()["presets"].get(os.path.realpath(path), {"editor": "", "test": "", "build": ""})
+    p = _read_registry_file()["presets"].get(os.path.realpath(path)) or {}
+    return {"editor": p.get("editor", ""), **{k: p.get(k, "") for k in PRESET_KINDS}}
+
+
+def _exists(path, *names):
+    return any(os.path.isfile(os.path.join(path, n)) for n in names)
+
+
+def preset_suggest(q):
+    """GET /api/projects/preset-suggest?path= → команды по файлам проекта (lock-файлы, манифесты). Только чтение файлов,
+    ничего не запускает; пользователь видит и сохраняет сам. Каждая подсказка проходит тот же допуск, что и пресет."""
+    path = resolve(q.get("path"))
+    s = {}
+    scripts = {}
+    if _exists(path, "package.json"):
+        try:
+            with open(os.path.join(path, "package.json"), encoding="utf-8") as f:
+                scripts = (json.load(f).get("scripts") or {})
+        except (OSError, ValueError, AttributeError):
+            scripts = {}
+        pm = "pnpm" if _exists(path, "pnpm-lock.yaml") else "yarn" if _exists(path, "yarn.lock") else "bun" if _exists(path, "bun.lockb", "bun.lock") else "npm"
+        s["install"] = {"npm": "npm ci" if _exists(path, "package-lock.json") else "npm install", "pnpm": "pnpm install", "yarn": "yarn install", "bun": "bun install"}[pm]
+        run = "npm run" if pm == "npm" else f"{pm} run"
+        for kind, names in (("lint", ("lint",)), ("test", ("test",)), ("build", ("build",)), ("dev", ("dev", "start", "serve"))):
+            name = next((n for n in names if n in scripts), None)
+            if name:
+                s[kind] = f"{pm} test" if (kind == "test" and pm != "bun") else f"{run} {name}"
+    elif _exists(path, "pubspec.yaml"):
+        s.update(install="flutter pub get", lint="flutter analyze", test="flutter test", build="flutter build apk")
+    elif _exists(path, "Cargo.toml"):
+        s.update(install="cargo fetch", lint="cargo clippy", test="cargo test", build="cargo build --release", dev="cargo run")
+    elif _exists(path, "go.mod"):
+        s.update(install="go mod download", lint="go vet ./...", test="go test ./...", build="go build ./...", dev="go run .")
+    elif _exists(path, "composer.json"):
+        s.update(install="composer install")
+        if _exists(path, "artisan"):
+            s.update(test="php artisan test", dev="php artisan serve")
+        elif _exists(path, "phpunit.xml", "phpunit.xml.dist"):
+            s["test"] = "phpunit"
+    elif _exists(path, "Gemfile"):
+        s.update(install="bundle install", lint="rubocop", test="bundle exec rake test")
+        if _exists(path, "bin/rails"):
+            s["dev"] = "./bin/rails server"
+    elif _exists(path, "uv.lock") or (_exists(path, "pyproject.toml") and _exists(path, ".python-version")):
+        s.update(install="uv sync", lint="ruff check", test="uv run pytest")
+    elif _exists(path, "requirements.txt", "pyproject.toml"):
+        s.update(install="pip3 install -r requirements.txt" if _exists(path, "requirements.txt") else "pip3 install -e .",
+                 lint="ruff check", test="pytest")
+    if _exists(path, "Podfile") and "install" not in s:
+        s["install"] = "pod install"
+    out = {}
+    for kind, cmd in s.items():
+        try:
+            out[kind] = _check_cmd(kind, cmd, path)
+        except ApiError:
+            continue          # например, ./bin/rails без права на исполнение — такую подсказку не предлагаем
+    return {"path": path, "suggest": out}
 
 
 def preset_set(body, editors=()):
-    """Пресет проекта: редактор + команды test/build (запускаются кнопками, runs.py; список разрешённых — RUN_TOOLS)."""
+    """Пресет проекта: редактор + команды install/lint/test/build/dev (запускаются кнопками и агентом через project.run; список разрешённых — RUN_TOOLS)."""
     real = resolve(body.get("path"))
     editor = body.get("editor") or ""
     if editor and editor not in editors:
         raise ApiError("Неизвестный редактор", code="proj.unknown_editor")
-    preset = {"editor": editor, "test": _check_cmd("test", body.get("test"), real), "build": _check_cmd("build", body.get("build"), real)}
+    preset = {"editor": editor, **{k: _check_cmd(k, body.get(k), real) for k in PRESET_KINDS}}
     data = _read_registry_file()
     if any(preset.values()):
         data["presets"][real] = preset

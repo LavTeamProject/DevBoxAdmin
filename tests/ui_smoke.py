@@ -24,8 +24,8 @@ ROUTES = [
     ("#dashboard", "dashboard", False),
     ("#start", "start", True), ("#start:profiles", "start", True), ("#setup", "start", True), ("#profiles", "start", True),
     ("#langs", None, False), ("#lang-python", None, False), ("#lang-python:packages", None, False), ("#lang-go", None, False), ("#lang-ruby", None, False), ("#php", None, False), ("#node", None, False),
-    ("#packages", "packages", False), ("#service:cloudflared", "packages", False), ("#service:cloudflared:versions", "packages", False),
-    ("#service:cloudflared:config", "packages", False), ("#service:cloudflared:log", "packages", False), ("#docker", "docker", False), ("#mobile", "mobile", False),
+    ("#packages", "packages", False), ("#service:cloudflared", "service:cloudflared", False), ("#service:cloudflared:versions", "service:cloudflared", False),
+    ("#service:cloudflared:config", "service:cloudflared", False), ("#service:cloudflared:log", "service:cloudflared", False), ("#docker", "docker", False), ("#mobile", "mobile", False),
     ("#projects", "projects", True), ("#projects:runs", "projects", True), ("#runs", "projects", True), ("#sites", "sites", False), ("#herd", "herd", False),
     ("#agents", "agents", False),
     ("#connect", "connect", False), ("#connect:agents", "connect", False), ("#connect:approvals", "connect", False), ("#connect:operators", "connect", False),
@@ -80,8 +80,10 @@ def check(browser, port, route, nav, comp):
     for bad in BAD_TEXT:
         if bad in body:
             problems.append(f"общая ошибка: «{bad}»")
-    active = re.findall(r'<a href="#(\w+)"[^>]*class="[^"]*\bactive\b', dom)
-    if nav and nav not in active:
+    # пункт меню: статический (#packages) или пункт объекта в меню (#service:nginx, #node); страница объекта — тот же адрес с вкладкой
+    active = re.findall(r'<a href="#([\w:@.%-]+)"[^>]*class="[^"]*\bactive\b', dom)
+    # если сервис не установлен, в меню его нет — тогда подсвечены «Пакеты и приложения»
+    if nav and not any(a == nav or nav.startswith(a + ":") for a in active) and not (nav.startswith("service:") and "packages" in active):
         problems.append(f"меню: подсвечено {active or 'ничего'}, ожидалось {nav}")
     if comp and 'id="compNav"' not in body:
         problems.append("нет полосы вкладок составной страницы")

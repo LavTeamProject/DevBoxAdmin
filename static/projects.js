@@ -217,6 +217,7 @@ tabs.projects = {
     // ada di cache, loadGithub hanya menggambar — tanpa request.
     this.loadGithub(d.path);
     this.loadVersions(d.path);
+    fillProjDev();
   },
 
   // «Версии для проекта»: что просят файлы проекта и подходит ли активная версия (только чтение файлов).
@@ -420,39 +421,65 @@ document.addEventListener("submit", (ev) => {
   else runGitOp("git.commit", { project: path, message: String(f.get("message") || "").trim() });
 });
 
-// Пресет проекта: редактор + команды test/build. Команды только СОХРАНЯЮТСЯ (запуск — Фаза 2.8).
+// Пресет проекта: редактор + команды install/lint/test/build/dev. Запуск — кнопками ниже (runs.py) и агентом через project.run.
+const PRESET_FIELDS = [["install", "projects.installCmd", "npm ci"], ["lint", "projects.lintCmd", "npm run lint"],
+  ["test", "projects.testCmd", "npm test"], ["build", "projects.buildCmd", "npm run build"], ["dev", "projects.devCmd", "npm run dev"]];
 function presetCard(d, editors) {
   const p = d.preset || {};
+  const runBtn = (kind, key, cls) => p[kind] ? btn(t(key), "runStart", { project: d.path, kind, confirm: t("runs.confirmRun", { cmd: p[kind] }) }, cls) : "";
   return `<div class="card" style="margin-bottom:14px">
-    <div class="name" style="margin-bottom:8px">${esc(t("projects.preset"))}</div>
+    <div class="row" style="margin-bottom:8px"><div class="name">${esc(t("projects.preset"))}</div><span class="spacer"></span>
+      ${btn(t("projects.presetSuggest"), "presetSuggest", { path: d.path })}</div>
     <form id="projPreset" class="new-app" data-path="${esc(d.path)}">
       <div class="field"><label>${esc(t("projects.editor"))}</label>
         <select name="editor"><option value="">—</option>${editors.map((e) =>
           `<option value="${esc(e.id)}" ${e.id === p.editor ? "selected" : ""}>${esc(e.name)}</option>`).join("")}</select></div>
-      <div class="field"><label>${esc(t("projects.testCmd"))}</label>
-        <input type="text" name="test" value="${esc(p.test || "")}" placeholder="flutter test" autocomplete="off"></div>
-      <div class="field"><label>${esc(t("projects.buildCmd"))}</label>
-        <input type="text" name="build" value="${esc(p.build || "")}" placeholder="flutter build apk" autocomplete="off"></div>
+      ${PRESET_FIELDS.map(([k, label, ph]) => `<div class="field"><label>${esc(t(label))}</label>
+        <input type="text" name="${k}" value="${esc(p[k] || "")}" placeholder="${esc(ph)}" autocomplete="off"></div>`).join("")}
       <div class="row" style="gap:8px">
         <button type="submit" class="primary">${esc(t("projects.presetSave"))}</button>
         ${d.registered ? btn(t("projects.unregister"), "projUnregister", { path: d.path, confirm: t("projects.unregisterConfirm") }, "danger") : ""}
       </div>
     </form>
-    <div class="row" style="gap:8px;margin-top:10px">
-      ${p.test ? btn(t("runs.runTest"), "runStart", { project: d.path, kind: "test", confirm: t("runs.confirmRun", { cmd: p.test }) }, "primary") : ""}
-      ${p.build ? btn(t("runs.runBuild"), "runStart", { project: d.path, kind: "build", confirm: t("runs.confirmRun", { cmd: p.build }) }) : ""}
-      ${!p.test && !p.build ? `<span class="muted small">${esc(t("runs.noPreset"))}</span>` : ""}
+    <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">
+      ${runBtn("install", "runs.runInstall")}${runBtn("lint", "runs.runLint")}${runBtn("test", "runs.runTest", "primary")}${runBtn("build", "runs.runBuild")}
+      ${p.dev ? `<span id="projDev" data-path="${esc(d.path)}" data-cmd="${esc(p.dev)}"></span>` : ""}
+      ${!PRESET_FIELDS.some(([k]) => p[k]) ? `<span class="muted small">${esc(t("runs.noPreset"))}</span>` : ""}
     </div>
     <div id="projRuns" data-path="${esc(d.path)}" style="margin-top:10px"></div>
     <div class="muted small" style="margin-top:8px">${esc(t("projects.presetHint"))}</div>
   </div>`;
 }
+// dev-сервер: кнопка «Запустить» или «Остановить» по состоянию (job без лимита времени)
+async function fillProjDev() {
+  const host = $("projDev");
+  if (!host) return;
+  let st = { running: false };
+  try { st = await api(`/api/runs/dev?project=${encodeURIComponent(host.dataset.path)}`); } catch { /* кнопка запуска */ }
+  if (!$("projDev")) return;
+  host.innerHTML = st.running
+    ? `<span class="badge green">${esc(t("runs.devRunning"))}</span> ${btn(t("runs.devStop"), "devStop", { job: st.job, path: host.dataset.path }, "danger")}`
+    : btn(t("runs.devStart"), "runStart", { project: host.dataset.path, kind: "dev", confirm: t("runs.confirmDev", { cmd: host.dataset.cmd }) }, "go");
+}
+handlers.devStop = async (d) => { await api("/api/runs/dev-stop", { project: d.path }); toast(t("runs.devStopped")); setTimeout(fillProjDev, 800); };
+handlers.presetSuggest = async (d) => {
+  const r = await api(`/api/projects/preset-suggest?path=${encodeURIComponent(d.path)}`);
+  const form = $("projPreset");
+  let n = 0;
+  for (const [k, cmd] of Object.entries(r.suggest || {})) {
+    const input = form && form.elements[k];
+    if (input && !input.value.trim()) { input.value = cmd; n++; }
+  }
+  toast(n ? t("projects.presetSuggested", { n }) : t("projects.presetNothing"));
+};
 document.addEventListener("submit", async (ev) => {
   if (ev.target.id !== "projPreset") return;
   ev.preventDefault();
   const fd = new FormData(ev.target);
   try {
-    const r = await api("/api/projects/preset", { path: ev.target.dataset.path, editor: fd.get("editor"), test: fd.get("test"), build: fd.get("build") });
+    const body = { path: ev.target.dataset.path, editor: fd.get("editor") };
+    PRESET_FIELDS.forEach(([k]) => { body[k] = fd.get(k); });
+    const r = await api("/api/projects/preset", body);
     if (tabs.projects.detail) tabs.projects.detail.preset = r.preset;
     toast(t("projects.presetSaved"));
     tabs.projects.render();
@@ -536,6 +563,7 @@ function renderProjRuns() {
 }
 handlers.runStart = async (d) => {
   const r = await api("/api/runs/start", { project: d.project, kind: d.kind });
+  if (d.kind === "dev") { toast(t("runs.devStarted")); setTimeout(fillProjDev, 800); return; }   // dev-сервер не «завершается» — не ждём его как задачу
   await runJob(Promise.resolve(r), () => tabs.projects.loadRuns(d.project));
 };
 handlers.runLog = async (d) => {

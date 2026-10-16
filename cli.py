@@ -8,6 +8,7 @@
 """
 import argparse
 import json
+import re
 import sys
 
 import mcp_server as m
@@ -23,10 +24,15 @@ def parse_params(items):
         k, sep, v = it.partition("=")
         if not sep or not k:
             raise SystemExit(f"параметр должен быть key=value: {it}")
-        try:
-            out[k] = json.loads(v)
-        except ValueError:
-            out[k] = v
+        # JSON — только явный (объект, массив, строка в кавычках, true/false/null) и целые числа; «3.13», «1.22» остаются
+        # строками: это версии, а не дроби
+        if v[:1] in ('{', '[', '"') or v in ("true", "false", "null") or re.fullmatch(r"-?\d+", v):
+            try:
+                out[k] = json.loads(v)
+                continue
+            except ValueError:
+                pass
+        out[k] = v
     return out
 
 
@@ -66,6 +72,14 @@ def main(argv=None):
     p.add_argument("--profile"); p.add_argument("--op"); p.add_argument("--param", action="append", metavar="key=value")
     for name in ("get", "execute", "cancel", "verify"):
         p = sub.add_parser(name, help=f"{name} plan"); p.add_argument("plan_id")
+    sub.add_parser("projects", help="проекты и их команды test/build")
+    sub.add_parser("runtimes", help="установленные языки и что можно поставить")
+    sub.add_parser("services", help="сервисы (веб, БД, кэш) и занятые порты")
+    p = sub.add_parser("versions", help="какие версии языков просит проект"); p.add_argument("path")
+    p = sub.add_parser("runs", help="история запусков test/build"); p.add_argument("--project"); p.add_argument("--limit", type=int)
+    p = sub.add_parser("log", help="полный лог запуска (по частям)"); p.add_argument("run_id"); p.add_argument("--offset", type=int, default=0)
+    p = sub.add_parser("call", help="любой инструмент шлюза: call ИМЯ --param key=value"); p.add_argument("tool")
+    p.add_argument("--param", action="append", metavar="key=value")
     j = sub.add_parser("job", help="job inspect [ID]").add_subparsers(dest="jcmd", required=True)
     p = j.add_parser("inspect"); p.add_argument("job_id", nargs="?")
     a = ap.parse_args(argv)
@@ -85,6 +99,16 @@ def main(argv=None):
             ap.error("нужен ровно один из --profile / --op")
         res = (call(a.agent, "inspect_profile", {"profile": a.profile}) if a.profile
                else call(a.agent, "plan_changes", {"operation": a.op, "params": parse_params(a.param)}))
+    elif a.cmd in ("projects", "runtimes", "services"):
+        res = call(a.agent, {"projects": "list_projects", "runtimes": "list_runtimes", "services": "list_services"}[a.cmd])
+    elif a.cmd == "versions":
+        res = call(a.agent, "inspect_project_versions", {"path": a.path})
+    elif a.cmd == "runs":
+        res = call(a.agent, "list_runs", {k: v for k, v in (("project", a.project), ("limit", a.limit)) if v})
+    elif a.cmd == "log":
+        res = call(a.agent, "get_run_log", {"run_id": a.run_id, "offset": a.offset})
+    elif a.cmd == "call":
+        res = call(a.agent, a.tool, parse_params(a.param))
     elif a.cmd in ("get", "execute", "cancel", "verify"):
         res = call(a.agent, {"get": "get_plan", "execute": "execute_plan", "cancel": "cancel_plan", "verify": "verify_plan"}[a.cmd],
                    {"plan_id": a.plan_id})

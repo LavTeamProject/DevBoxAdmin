@@ -78,13 +78,15 @@ tabs.langs = {
             <span class="badge ${l.source === "Homebrew" ? "" : "blue"}">${esc(l.source)}</span>
             ${l.overridden ? `<span class="badge green" title="${esc(t("lang.defaultSetTitle"))}">${esc(t("lang.defaultSet"))}</span>` : ""}
             ${l.managed || l.builtin ? "" : `<span class="badge">${esc(t("lang.infoBadge"))}</span>`}</div>
+          <div class="small lang-desc">${esc(t("langdesc." + l.key))}</div>
           <div class="muted small lang-path"><code>${esc(l.path.replace(/^\/Users\/[^/]+/, "~"))}</code></div>
           <div class="lang-foot">${esc(l.managed || l.builtin ? t("lang.manage") : t("lang.details"))}</div>
         </a>`).join("")}</div>
-      ${available.length ? `<h2>${esc(t("lang.notInstalled"))} <span class="muted small">${esc(t("lang.notInstalledHint"))}</span></h2>
-        <div class="grid lang-grid small">${available.map((a) => `<div class="card lang-card muted-card">
+      ${available.length ? `<h2>${esc(t("lang.notInstalled"))} <span class="muted small">${esc(t(window.PLATFORM?.os === "linux" ? "lang.notInstalledHintApt" : "lang.notInstalledHint"))}</span></h2>
+        <div class="grid lang-grid small">${available.filter((a) => a.key !== "dart").map((a) => `<div class="card lang-card muted-card">
           <div class="row" style="flex-wrap:nowrap;gap:12px">${logoSvg(a.key, "lang-logo") || `<span class="lang-logo pkg-fallback">${esc(a.name[0])}</span>`}
             <div><div class="lang-name">${esc(a.name)}</div><div class="muted small"><code>${esc(a.formula)}</code>${a.type === "cask" ? ` (${esc(t("lang.appSuffix"))})` : ""}</div></div></div>
+          <div class="muted small lang-desc">${esc(t("langdesc." + a.key))}</div>
           <div class="lang-foot">${btn(t("profiles.install"), "langInstall", { formula: a.formula, type: a.type, name: a.name }, "go")}</div></div>`).join("")}</div>` : ""}`;
   },
 };
@@ -302,7 +304,19 @@ const LANG_RENDER = {
   ruby: {
     warn: (d) => d.system_ruby ? `<div class="warn">${t("lang.rubySystem", { v: esc(d.active.version) })}</div>` : "",
     body: (d) => `<h2 class="row">${esc(t("lang.gemsInstalled"))} <span class="spacer"></span><span class="muted small">${(d.gems || []).length} gem</span></h2>
-      ${tableOf(["Gem", t("common.version")], (d.gems || []).map((g) => `<tr><td>${esc(g.name)}</td><td class="small"><code>${esc(g.version)}</code></td></tr>`))}`,
+      ${d.system_ruby ? "" : `<form class="row" id="gemInstall" style="margin-bottom:10px"><input type="text" name="name" placeholder="rails" style="flex:1;max-width:320px"><button class="go">gem install</button></form>`}
+      ${tableOf(["Gem", t("common.version"), ""], (d.gems || []).map((g) => `<tr><td>${esc(g.name)}</td><td class="small"><code>${esc(g.version)}</code></td>
+        <td>${d.system_ruby || g.version.includes("default") ? "" : `<div class="actions">${btn(t("lang.uninstall"), "langAct", { key: "ruby", action: "gem-uninstall", name: g.name, job: 1, confirm: t("lang.confirmUninstall", { name: g.name }) }, "danger")}</div>`}</td></tr>`))}`,
+    bind() { bindForm("gemInstall", (v) => langJob("ruby", "gem-install", v)); },
+  },
+
+  node: {
+    body: (d) => `<h2 class="row">${esc(t("lang.npmGlobal"))} <span class="spacer"></span><span class="muted small">${(d.packages || []).length}</span></h2>
+      <p class="muted small">${esc(t("lang.npmGlobalHint", { v: d.active.version || "" }))}</p>
+      <form class="row" id="npmInstall" style="margin-bottom:10px"><input type="text" name="name" placeholder="typescript, pnpm, @vue/cli" style="flex:1;max-width:320px"><button class="go">npm install -g</button></form>
+      ${d.packages == null ? `<div class="muted small">${esc(t("lang.npmReadFail"))}</div>` : tableOf([t("lang.thPackage"), t("common.version"), ""], d.packages.map((p) => `<tr><td><b>${esc(p.name)}</b></td><td><code>${esc(p.version)}</code></td>
+        <td>${["npm", "corepack"].includes(p.name) ? "" : `<div class="actions">${btn(t("lang.uninstall"), "langAct", { key: "node", action: "npm-uninstall", name: p.name, job: 1, confirm: t("lang.confirmUninstall", { name: p.name }) }, "danger")}</div>`}</td></tr>`))}`,
+    bind() { bindForm("npmInstall", (v) => langJob("node", "npm-install", v)); },
   },
 };
 

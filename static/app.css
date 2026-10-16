@@ -403,3 +403,5 @@ nav a.nav-label-link:hover { background: none; text-decoration: underline; }
 .nav-sw.busy { opacity: .5; animation: navpulse 1s infinite; }
 @keyframes navpulse { 50% { opacity: .25; } }
 #navTech a { padding-top: 6px; padding-bottom: 6px; }
+
+.lang-desc { margin: 2px 0 6px; line-height: 1.35; }

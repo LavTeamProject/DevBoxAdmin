@@ -229,3 +229,30 @@ Object.assign(I18N.en, {
   "pkg.cfPrompt": "Hostname to route to tunnel “{name}”:",
   "pkg.cfToastRule": "Rule {host} added",
 });
+
+Object.assign(I18N.ru, {
+ "pkg.searchDesc": "в описаниях",
+ "pkg.searchDescTitle": "Искать по описанию пакета, а не только по имени (медленнее)",
+ "pkg.updateIndex": "Обновить индексы",
+ "pkg.updateIndexTitle": "brew update (на Linux — apt-get update): свежие списки пакетов и версий; установленное не меняется",
+ "pkg.pin": "Закрепить",
+ "pkg.unpin": "Открепить",
+ "pkg.pinned": "закреплён",
+ "pkg.pinnedTitle": "Версия закреплена: «Обновить» и «Обновить всё» её не трогают",
+ "pkg.pinnedOk": "{name}: версия закреплена",
+ "pkg.unpinnedOk": "{name}: закрепление снято",
+ "err.srv.pin_formula_only": "Закрепить можно только формулу"
+});
+Object.assign(I18N.en, {
+ "pkg.searchDesc": "in descriptions",
+ "pkg.searchDescTitle": "Search package descriptions, not only names (slower)",
+ "pkg.updateIndex": "Update indexes",
+ "pkg.updateIndexTitle": "brew update (apt-get update on Linux): fresh package and version lists; nothing installed changes",
+ "pkg.pin": "Pin",
+ "pkg.unpin": "Unpin",
+ "pkg.pinned": "pinned",
+ "pkg.pinnedTitle": "The version is pinned: Upgrade and Upgrade all leave it alone",
+ "pkg.pinnedOk": "{name}: version pinned",
+ "pkg.unpinnedOk": "{name}: unpinned",
+ "err.srv.pin_formula_only": "Only a formula can be pinned"
+});

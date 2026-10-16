@@ -64,8 +64,10 @@ tabs.packages = {
       <div class="row" style="margin-bottom:12px">
         <form class="row" id="pkgSearch" style="flex:1;min-width:260px">
           <input type="search" id="pkgQ" placeholder="${esc(t("pkg.searchPh"))}" style="flex:1">
+          <label class="small row" style="gap:4px" title="${esc(t("pkg.searchDescTitle"))}"><input type="checkbox" id="pkgQDesc">${esc(t("pkg.searchDesc"))}</label>
           <button>${esc(t("pkg.searchBtn"))}</button>
         </form>
+        ${btn(t("pkg.updateIndex"), "pkgUpdateIndex", {}, "", `title="${esc(t("pkg.updateIndexTitle"))}"`)}
         ${btn(t("pkg.upgradeAll"), "pkgUpgradeAll", { confirm: t("pkg.confirmUpgradeAll") })}
       </div>
       <div class="row" style="margin-bottom:14px"><div class="seg" id="pkgFilter"></div><span class="spacer"></span><span class="muted small" id="pkgNote"></span></div>
@@ -89,7 +91,7 @@ tabs.packages = {
       installed: all.length, all: all.filter((a) => a.on_request).length,
       deps: all.filter((a) => a.type === "formula" && !a.on_request).length, removable: all.filter((a) => a.removable).length,
       cli: all.filter((a) => a.type === "formula" && a.on_request).length, app: all.filter((a) => a.type === "cask").length,
-      outdated: all.filter((a) => a.outdated).length, service: all.filter((a) => a.svc).length, sets: "", ports: "", recommend: 100,
+      outdated: all.filter((a) => a.outdated).length, service: all.filter((a) => a.svc).length, sets: "", ports: "", recommend: this.recommend ? this.recommend.length : "",
     };
     const running = this.services.filter((s) => s.running).length;
     $("headline").textContent = t("pkg.headline", { run: running, total: this.services.length, n: counts.all });
@@ -141,6 +143,7 @@ tabs.packages = {
         return `<tr>
           <td><div class="row" style="flex-wrap:nowrap;gap:10px">${pkgIcon(a.name, a.type)}<div>
             <b>${esc(a.name)}</b> <span class="badge ${a.type === "cask" ? "blue" : ""}">${a.type === "cask" ? "app" : "cli"}</span>
+            ${a.pinned ? `<span class="badge blue" title="${esc(t("pkg.pinnedTitle"))}">📌 ${esc(t("pkg.pinned"))}</span>` : ""}
             <div class="muted small">${esc(a.desc)}</div></div></div></td>
           <td class="small"><code>${esc(a.version)}</code>${a.outdated ? `<br><span class="badge amber">→ ${esc(a.latest || t("pkg.newVer"))}</span>` : ""}</td>
           <td class="small">${a.type === "cask" ? `<span class="badge blue">${esc(t("pkg.originApp"))}</span>`
@@ -151,7 +154,8 @@ tabs.packages = {
           <td class="small">${a.svc ? `<a href="#service:${encodeURIComponent(a.name)}" class="row" style="gap:6px;text-decoration:none;color:inherit">
             <span class="dot ${svcDot(a.svc)}"></span>${esc(a.svc.status)}</a>` : `<span class="muted">–</span>`}</td>
           <td><div class="actions">
-            ${a.outdated ? btn(t("pkg.upgrade"), "pkg", { ...d, action: "upgrade" }, "go") : ""}
+            ${a.outdated && !a.pinned ? btn(t("pkg.upgrade"), "pkg", { ...d, action: "upgrade" }, "go") : ""}
+            ${a.type === "formula" && a.on_request && window.PLATFORM?.os !== "linux" ? btn(a.pinned ? t("pkg.unpin") : t("pkg.pin"), "pkgPin", { name: a.name, act: a.pinned ? "unpin" : "pin" }) : ""}
             ${a.svc ? `<a class="btn-link" href="#service:${encodeURIComponent(a.name)}">${esc(t("pkg.detail"))}</a>` : ""}
             ${a.used_by?.length && !a.removable ? `<span class="muted small" title="${esc(a.used_by.join(", "))}">${esc(t("pkg.neededBy", { n: a.used_by.length }))}</span>`
               : btn(t("pkg.uninstall"), a.svc ? "svcUninstall" : "pkg", { ...d, action: "uninstall", confirm: t("pkg.confirmUninstall", { name: a.name }) }, "danger")}
@@ -255,11 +259,13 @@ tabs.packages = {
     if (!q) return;
     $("pkgResults").innerHTML = `<div class="loading">${esc(t("pkg.searching", { q }))}</div>`;
     try {
-      const { results } = await api(`/api/apps/search?q=${encodeURIComponent(q)}`);
+      const { results } = await api(`/api/apps/search?q=${encodeURIComponent(q)}${$("pkgQDesc")?.checked ? "&desc=1" : ""}`);
       $("pkgResults").innerHTML = `<div class="card" style="margin-bottom:16px"><h3>${esc(t("pkg.searchResults"))} <span class="spacer"></span>
           ${btn(t("pkg.close"), "pkgCloseSearch")}</h3>
         <div class="list">${results.map((r) => `<div class="item" style="padding:6px 0;border-bottom:1px solid var(--border)">
-          <div class="name">${pkgIcon(r.name, r.type)}${esc(r.name)} <span class="badge ${r.type === "cask" ? "blue" : ""}">${r.type === "cask" ? "app" : "cli"}</span></div>
+          <div><div class="name">${pkgIcon(r.name, r.type)}${esc(r.name)} <span class="badge ${r.type === "cask" ? "blue" : ""}">${r.type === "cask" ? "app" : "cli"}</span>
+            ${r.version ? `<code class="small">${esc(r.version)}</code>` : ""}</div>
+            ${r.desc ? `<div class="muted small">${esc(catTr(r.desc))}</div>` : ""}</div>
           <div class="actions">${r.installed ? `<span class="badge green">${esc(t("pkg.installedLower"))}</span>` : btn(t("pkg.install"), "pkg", { name: r.name, type: r.type, action: "install" }, "go")}</div>
         </div>`).join("") || `<div class="muted small">${esc(t("pkg.notFound"))}</div>`}</div></div>`;
     } catch (e) { $("pkgResults").innerHTML = `<div class="err">${esc(e.message)}</div>`; }
@@ -281,6 +287,8 @@ handlers.setDelete = async (d) => { await api("/api/service-sets/delete", { id: 
 handlers.pkgAutoremove = () => runJob(api("/api/apps/action", { action: "autoremove" }), reloadPackages);
 handlers.pkgCleanup = () => runJob(api("/api/apps/action", { action: "cleanup" }), reloadPackages);
 document.addEventListener("change", (ev) => { if (ev.target.id === "pkgSort") { tabs.packages.sort = ev.target.value; tabs.packages.render(); } });
+handlers.pkgUpdateIndex = () => runJob(api("/api/apps/action", { action: "update" }), reloadPackages);
+handlers.pkgPin = async (d) => { await api("/api/apps/action", { name: d.name, type: "formula", action: d.act }); toast(t(d.act === "pin" ? "pkg.pinnedOk" : "pkg.unpinnedOk", { name: d.name })); reloadPackages(); };
 handlers.pkgUpgradeAll = () => runJob(api("/api/apps/action", { action: "upgrade-all" }), reloadPackages);
 handlers.svcInstall = (d) => runJob(api("/api/services/install", { formula: d.formula }), () => { tabs.packages.catalog = null; reloadPackages(); });
 handlers.svcUninstall = (d) => runJob(api("/api/services/uninstall", { name: d.name }), () => {

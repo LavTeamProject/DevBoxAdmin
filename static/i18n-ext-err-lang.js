@@ -56,3 +56,6 @@ Object.assign(I18N.en, {
 
 Object.assign(I18N.ru, { "err.lang.cant_remove_default": "Эта версия выбрана по умолчанию (или на ней работает панель): сначала выберите другую" });
 Object.assign(I18N.en, { "err.lang.cant_remove_default": "This version is the default (or the panel runs on it): choose another one first" });
+
+Object.assign(I18N.ru, {"err.lang.pkg_protected": "{name}: этот пакет удалять нельзя", "err.lang.system_ruby": "Системный Ruby macOS: гемы в него ставятся только с правами администратора. Выберите Ruby из Homebrew"});
+Object.assign(I18N.en, {"err.lang.pkg_protected": "{name}: this package cannot be removed", "err.lang.system_ruby": "System macOS Ruby: gems can only be installed into it with administrator rights. Choose a Homebrew Ruby"});

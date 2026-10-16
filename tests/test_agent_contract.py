@@ -132,14 +132,14 @@ class Contract(unittest.TestCase):
     def test_execute_requires_approval_and_runs_once(self):
         a = self.agent("x")
         pid = self.propose(a)
-        self.assertEqual(self.code(self.call(a, "execute_plan", plan_id=pid)), "failed")      # ещё не одобрен
+        self.assertEqual(self.code(self.call(a, "execute_plan", plan_id=pid)), "plan.not_approved")   # ещё не одобрен: точный код, не «failed»
         plans.approve({"id": pid})
         self.assertEqual(plans.get({"id": a["id"]}, pid)["status"], "approved")
         r = self.call(a, "execute_plan", plan_id=pid)
         self.assertTrue(r["ok"], r)
         again = self.call(a, "execute_plan", plan_id=pid)
         self.assertFalse(again["ok"])
-        self.assertIn("already", again["error"]["message"].lower() + "already")                # повторно исполнить нельзя
+        self.assertIn(again["error"]["code"], ("plan.already_executed", "plan.not_approved"))   # повторно исполнить нельзя
         self.assertEqual(plans.get({"id": a["id"]}, pid)["status"], "done")
         self.assertTrue(self.call(a, "verify_plan", plan_id=pid)["ok"])
 
@@ -324,3 +324,76 @@ class McpBridge(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReadTools(unittest.TestCase):
+    """L1-инструменты для цикла «проект → версии → запуск → лог» (только чтение). Окружение и помощники — как в Contract."""
+    setUp, _ask, agent, call, tools, code = Contract.setUp, Contract._ask, Contract.agent, Contract.call, Contract.tools, Contract.code
+    def test_new_read_tools_listed_for_l1(self):
+        a = self.agent("r", "L1")
+        self.assertTrue({"list_projects", "inspect_project_versions", "list_runtimes", "list_runs", "get_run_log", "list_services"} <= self.tools(a))
+
+    def test_run_log_in_chunks_and_bad_id(self):
+        import runs
+        a = self.agent("r", "L1")
+        rd = os.path.join(self.tmp, "runs")
+        os.makedirs(rd)
+        with open(os.path.join(rd, "rabc123.log"), "w") as f:
+            f.write("x" * 75_000)
+        with open(os.path.join(rd, "rdef456.log"), "w", encoding="utf-8") as f:
+            f.write("я" * 30_000 + " token ghp_abcdefghijklmnopqrstuvwxyz0123 end")      # 2 байта на букву
+        with mock.patch.object(runs, "RUNS_DIR", rd):
+            r1 = self.call(a, "get_run_log", run_id="rabc123")["result"]
+            self.assertEqual((r1["offset"], r1["next_offset"], r1["eof"]), (0, 50_000, False))
+            r2 = self.call(a, "get_run_log", run_id="rabc123", offset=r1["next_offset"])["result"]
+            self.assertTrue(r2["eof"])
+            self.assertEqual(len(r2["text"]), 25_000)
+            c1 = self.call(a, "get_run_log", run_id="rdef456")["result"]
+            self.assertNotIn("\ufffd", c1["text"])                                   # кириллица не режется посередине
+            c2 = self.call(a, "get_run_log", run_id="rdef456", offset=c1["next_offset"])["result"]
+            self.assertNotIn("\ufffd", c2["text"])
+            self.assertIn("<скрыто>", c2["text"])
+            self.assertNotIn("ghp_abc", c2["text"])
+            odd = self.call(a, "get_run_log", run_id="rdef456", offset=1)["result"]   # offset внутри символа
+            self.assertNotIn("\ufffd", odd["text"][:5])
+            self.assertEqual(self.code(self.call(a, "get_run_log", run_id="r999999")), "run.log_missing")
+        self.assertEqual(self.code(self.call(a, "get_run_log", run_id="../etc")), "invalid_params")
+
+    def test_list_projects_shows_runnable_kinds(self):
+        import projects
+        a = self.agent("r", "L1")
+        with mock.patch.object(projects, "list_projects", return_value={"projects": [{"path": "/p/app", "name": "app", "worktree": False}]}), \
+             mock.patch.object(projects, "_read_registry_file", return_value={"presets": {"/p/app": {"test": "npm test", "build": ""}}}), \
+             mock.patch("os.path.realpath", side_effect=lambda x: x):
+            r = self.call(a, "list_projects")["result"]
+        self.assertEqual(r["projects"][0]["runnable"], ["test"])
+
+    def test_error_codes_are_precise(self):
+        a = self.agent("r", "L1")
+        r = self.call(a, "inspect_project_versions", path="/definitely/not/registered")
+        self.assertEqual(self.code(r), "proj.unknown")
+
+
+class NewAgentOps(unittest.TestCase):
+    """Шаг 4 ревью: узкие операции агента. Широкие и разрушительные — по-прежнему закрыты."""
+    def test_agent_ops_include_new_and_exclude_destructive(self):
+        for op in ("lang.select", "python.install", "service.start", "service.stop", "service.restart", "docker.compose_control"):
+            self.assertIn(op, plans.AGENT_OPS)
+            self.assertEqual(operations.OPS[op]["level"], "L2", op)
+        for op in ("lang.action", "docker.compose", "service.uninstall", "package.uninstall", "service.kill"):
+            self.assertNotIn(op, plans.AGENT_OPS)
+
+    def test_compose_control_has_no_down(self):
+        enum = operations.OPS["docker.compose_control"]["params"]["properties"]["action"]["enum"]
+        self.assertFalse([a for a in enum if "down" in a])
+
+    def test_lang_select_rejects_unknown_install(self):
+        import ops_system
+        with mock.patch.object(ops_system, "_install_ids", return_value=["brew:node@20"]):
+            with self.assertRaises(core.ApiError) as cm:
+                ops_system._lang_select_plan({"key": "node", "id": "brew:node@99"})
+        self.assertEqual(cm.exception.code, "lang.unknown_install")
+
+    def test_lang_action_accepts_via(self):
+        import opschema
+        self.assertIsNone(opschema.validate(operations.OPS["lang.action"]["params"], {"key": "python", "action": "install", "version": "3.12", "via": "uv"}))   # via разрешён

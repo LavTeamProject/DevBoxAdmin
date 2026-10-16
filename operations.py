@@ -280,6 +280,17 @@ _register("snapshot.create", "Take an environment snapshot", "Record installed p
 _register("backup.run", "Run a backup now", "Back up repositories (git bundle), configured folders and panel data to the configured destination.", "L2",
           "backup", idempotent=True, verify="every copy is verified right after creation; see the last run in the panel",
           plan=lambda p: {"will_change": True, "writes": "the configured backup destination"}, execute=lambda p: __import__("backups").start({}))
+def _project_run_verify(p):
+    """Последний запуск этого вида в проекте: статус и код выхода (подробный лог — get_run_log)."""
+    import projects
+    import runs
+    rows = runs.history({"project": projects.resolve(p["project"]), "kind": p["kind"], "limit": 1})["runs"]
+    if not rows:
+        return {"ok": False, "note": "no run recorded"}
+    r = rows[0]
+    return {"ok": r["status"] == "ok", "run_id": r["id"], "status": r["status"], "code": r["code"], "duration": r["duration"]}
+
+
 def _project_run_plan(p):
     import projects
     path = projects.resolve(p["project"])
@@ -290,10 +301,12 @@ def _project_run_plan(p):
     return {"will_change": True, "would_run": cmd, "cwd": path}
 
 
-_register("project.run", "Run a project's test or build command", "Run the test/build command stored in the project's preset (allowlisted tools, 30 min limit).", "L2",
-          "project", opschema.obj({"project": _project(), "kind": {"type": "string", "enum": ["test", "build"]}}, ["project", "kind"]),
+_register("project.run", "Run a project's install, lint, test or build command",
+          "Run the install (dependencies), lint, test or build command stored in the project's preset (allowlisted tools, 30 min limit). "
+          "The commands are set by the user on the project page; list_projects shows which kinds are available.", "L2",
+          "project", opschema.obj({"project": _project(), "kind": {"type": "string", "enum": ["install", "lint", "test", "build"]}}, ["project", "kind"]),
           verify="exit code and history entry in the Runs page",
-          plan=_project_run_plan, execute=lambda p: __import__("runs").start(p))
+          plan=_project_run_plan, execute=lambda p: __import__("runs").start(p), verify_fn=_project_run_verify)
 
 
 _register("github.workflow_run", "Dispatch a GitHub Actions workflow", "Start a workflow_dispatch run on a branch of the project's GitHub repository.", "L3", "project",

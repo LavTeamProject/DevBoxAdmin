@@ -342,7 +342,9 @@ tabs.php = {
         ${sel ? btn(t("app.php.removeOverride"), "phpSel", { id: "default" }, "", `title="${esc(t("app.php.removeOverrideTip"))}"`) : ""}</h2>
       <div class="list">${rows}</div>
       <p class="muted small">${t("app.php.note", { pk: `<a href="#packages">${esc(t("nav.packages"))}</a>` })}</p>
+      <div id="verCard"></div>
       ${herd}`;
+    fillBrewVersions($("verCard"), "/api/lang/versions?key=php");   // php@8.1…8.4 из Homebrew — как у остальных языков
   },
 };
 handlers.phpSel = async (d) => {

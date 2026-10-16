@@ -180,6 +180,8 @@ GET_ROUTES = {
     "/api/projects/editors": lambda q: {"editors": herdphp.installed_editors()},
     "/api/projects/github": projects.github_info,
     "/api/projects/versions": project_versions.project_versions,
+    "/api/projects/preset-suggest": projects.preset_suggest,
+    "/api/runs/dev": runs.dev_status,
     "/api/agents": agents.sessions_info,
     "/api/job": lambda q: get_job(q.get("id", ""), int(q.get("offset", 0) or 0)),
 }
@@ -221,6 +223,7 @@ POST_ROUTES = {
     "/api/backups/verify": backups.verify,
     "/api/backups/restore": backups.restore,
     "/api/runs/start": runs.start,
+    "/api/runs/dev-stop": runs.dev_stop,
     "/api/gh/workflow_run": runs.workflow_run,
     "/api/gh/run_cancel": runs.run_cancel,
     "/api/gh/run_rerun": runs.run_rerun,

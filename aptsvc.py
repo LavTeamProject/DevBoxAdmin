@@ -58,6 +58,12 @@ def app_action(body):
     name, action = body.get("name", ""), body.get("action")
     if action == "upgrade-all":
         return elevate.run_admin("apt upgrade", ["apt-get", "upgrade", "-y"])
+    if action == "update":          # обновить индексы apt
+        return elevate.run_admin("apt update", ["apt-get", "update"])
+    if action == "autoremove":      # убрать зависимости, которые больше никому не нужны
+        return elevate.run_admin("apt autoremove", ["apt-get", "autoremove", "-y"])
+    if action == "cleanup":         # кэш загруженных .deb
+        return elevate.run_admin("apt clean", ["apt-get", "clean"])
     if not APT_NAME.match(name):
         raise ApiError("Недопустимое имя пакета", code="srv.pkg_invalid")
     if action not in ACTIONS:

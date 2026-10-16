@@ -206,6 +206,14 @@ def start_job(label, cmd, kind, cwd=None, env=None, exclusive=True):
     return job_id
 
 
+class StepFailed(Exception):
+    """Шаг-функция в start_steps завершилась неудачно с НАСТОЯЩИМ кодом выхода (тест упал с 1, таймаут = 124),
+    а не обобщённым -1: агенту и истории нужен именно код."""
+    def __init__(self, rc, msg=""):
+        super().__init__(msg or f"exit {rc}")
+        self.rc = rc
+
+
 def start_steps(label, steps, kind):
     """Job berisi beberapa langkah berurutan; berhenti di langkah pertama yang gagal.
     steps: [(judul, cmd_list | callable(log) , {"cwd":..., "env":..., "optional": bool})]"""
@@ -221,6 +229,10 @@ def start_steps(label, steps, kind):
         job["lines"].append(line)
         del job["lines"][:-5000]
 
+    # шаг-функция, запустившая свой процесс, регистрирует его: тогда «Остановить» (cancel_job) убивает его группу
+    log.attach = lambda proc: job.__setitem__("_proc", proc)
+    log.cancelled = lambda: bool(job.get("cancelled"))   # шаг-функция проверяет перед запуском своего процесса (отмена в первые секунды)
+
     def worker():
         code = 0
         for i, (title, cmd, opt) in enumerate(steps, 1):
@@ -235,13 +247,23 @@ def start_steps(label, steps, kind):
                     rc = 0
                 else:
                     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
-                                            stdin=subprocess.DEVNULL, cwd=opt.get("cwd"), env=opt.get("env") or ENV)
+                                            stdin=subprocess.DEVNULL, cwd=opt.get("cwd"), env=opt.get("env") or ENV,
+                                            start_new_session=True)   # своя группа процессов: отмена убивает и дочерние
+                    job["_proc"] = proc
                     for line in proc.stdout:
                         log(line.rstrip("\n"))
                     rc = proc.wait()
+            except StepFailed as e:
+                rc = e.rc
             except Exception as e:  # noqa: BLE001
                 log(f"ERROR: {e}")
                 rc = -1
+            finally:
+                job.pop("_proc", None)
+            if job.get("cancelled"):
+                log("\n⏹ Остановлено.")
+                code = 143        # 128 + SIGTERM, как в start_job
+                break
             if rc != 0:
                 if opt.get("optional"):
                     log(f"⚠️  Этот шаг завершился с ошибкой (exit {rc}), пропущен.")
@@ -468,6 +490,36 @@ def shell_probe(names):
         if m:
             result[m[1]] = m[2].strip()
     return result
+
+
+def project_env():
+    """Окружение для запусков проекта (тест/сборка/зависимости): PATH интерактивной оболочки пользователя
+    (nvm, cargo, uv и т. п.) + ссылки ~/.service-admin/bin спереди + переменные, заданные панелью (JAVA_HOME…).
+    Так запуск идёт на тех же версиях, что выбраны в панели и видны в новом терминале, а не на PATH сервера."""
+    env = dict(ENV)
+    try:
+        _, out, _ = run([shell_name(), "-i", "-c", 'echo "__PATH__$PATH"'], timeout=20)
+        m = re.search(r"__PATH__(.*)", out)
+        shell_path = m[1].strip() if m else ""
+    except (OSError, subprocess.TimeoutExpired):
+        shell_path = ""
+    for group in load_state().get("env", {}).values():
+        for k, v in group.items():
+            if re.fullmatch(r"[A-Z_][A-Z0-9_]*", k) and isinstance(v, str):
+                env[k] = v
+    parts = [SHIM_DIR]
+    if env.get("JAVA_HOME"):
+        parts.append(os.path.join(env["JAVA_HOME"], "bin"))
+    parts += (shell_path or "").split(":") + ENV["PATH"].split(":")
+    seen, path = set(), []
+    for p in parts:
+        # только абсолютные пути: относительные (node_modules/.bin, «.») считались бы от папки проекта, и файл проекта
+        # с именем разрешённого инструмента (pytest, go) запускался бы вместо него
+        if p and os.path.isabs(p) and p not in seen:
+            seen.add(p)
+            path.append(p)
+    env["PATH"] = ":".join(path)
+    return env
 
 
 def notify(title, text):

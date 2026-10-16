@@ -155,20 +155,58 @@ def list_apps():
     return build_apps(json.loads(out), _cellar_sizes())
 
 
+DESC_RE = __import__("re").compile(r"^\w[\w .+-]{1,39}$")   # первая — буква/цифра: «--eval-all» не станет опцией brew
+
+
+def _describe(names, kind):
+    """Описание и версия для найденных имён одним вызовом `brew info --json=v2` (локальный кэш API, без автообновления)."""
+    if not names:
+        return {}
+    code, out, _ = run([BREW, "info", "--json=v2", f"--{kind}", *names], timeout=60, env=RO_ENV)
+    data = loads_or(out, {}) if code == 0 else {}
+    res = {}
+    for f in data.get("formulae", []) if kind == "formula" else data.get("casks", []):
+        n = f.get("name") if kind == "formula" else f.get("token")
+        ver = ((f.get("versions") or {}).get("stable") if kind == "formula" else f.get("version")) or ""
+        res[n] = {"desc": f.get("desc") or "", "version": ver}
+    return res
+
+
 def search_apps(q):
+    """GET /api/apps/search?q=…[&desc=1] — по имени (или по описанию, desc=1) во всём Homebrew; у первых 40 результатов — описание и версия."""
     if sys.platform != "darwin":  # Linux: systemd / apt (Фаза 6, Л3)
         return aptsvc.search_apps(q)
     term = q.get("q", "").strip()
-    if not PKG_RE.match(term):
+    by_desc = q.get("desc") == "1"
+    if not (DESC_RE.match(term) if by_desc else PKG_RE.match(term)):
         raise ApiError("Недопустимый поисковый запрос", code="srv.query_invalid")
     results = []
     for kind, flag in (("formula", "--formula"), ("cask", "--cask")):
-        _, out, _ = run([BREW, "search", flag, term], timeout=60)
+        cmd = [BREW, "search", flag, "--desc", term] if by_desc else [BREW, "search", flag, term]   # --eval-all в новом Homebrew запрещён
+        _, out, _ = run(cmd, timeout=90, env=RO_ENV)
         for line in out.splitlines():
-            name = line.strip().rstrip(" ✔")
+            raw = line.strip()
+            name = raw.split(":", 1)[0].strip().rstrip(" ✔") if by_desc else raw.rstrip(" ✔")
             if name and not name.startswith("==>") and PKG_RE.match(name):
-                results.append({"name": name, "type": kind, "installed": line.strip().endswith("✔")})
-    return {"results": results[:100]}
+                results.append({"name": name, "type": kind, "installed": raw.endswith("✔") and not by_desc,
+                                "desc": raw.split(":", 1)[1].strip() if by_desc and ":" in raw else ""})
+    results = results[:100]
+    have = set(_installed_names()) if by_desc else None
+    for kind in ("formula", "cask"):
+        names = [r["name"] for r in results if r["type"] == kind][:40]
+        info = _describe(names, kind)
+        for r in results:
+            if r["type"] == kind and r["name"] in info:
+                r["desc"] = r["desc"] or info[r["name"]]["desc"]
+                r["version"] = info[r["name"]]["version"]
+            if have is not None and r["type"] == kind:
+                r["installed"] = r["name"] in have
+    return {"results": results}
+
+
+def _installed_names():
+    code, out, _ = run([BREW, "list", "-1"], timeout=60, env=RO_ENV)
+    return [l.strip() for l in out.splitlines() if l.strip()] if code == 0 else []
 
 
 def app_action(body):
@@ -181,6 +219,15 @@ def app_action(body):
         return {"job": start_job("brew autoremove", [BREW, "autoremove"], "brew")}
     if action == "cleanup":         # старые версии и кэш загрузок
         return {"job": start_job("brew cleanup", [BREW, "cleanup"], "brew")}
+    if action == "update":          # обновить индексы Homebrew (списки формул и версий); сами пакеты не меняются
+        return {"job": start_job("brew update", [BREW, "update"], "brew")}
+    if action in ("pin", "unpin"):  # закрепить версию: `brew upgrade` (в т. ч. «обновить всё») её не тронет
+        if not PKG_RE.match(name) or kind != "formula":
+            raise ApiError("Закрепить можно только формулу", code="srv.pin_formula_only")
+        code, out, err = run([BREW, action, name], timeout=60)
+        if code != 0:
+            raise ApiError((out + err).strip() or "Ошибка brew", HTTPStatus.INTERNAL_SERVER_ERROR, code=None if (out + err).strip() else "srv.failed")
+        return {"ok": True}
     if not PKG_RE.match(name) or kind not in ("formula", "cask"):
         raise ApiError("Недопустимое имя пакета", code="srv.pkg_invalid")
     if action not in ("install", "uninstall", "upgrade", "reinstall"):

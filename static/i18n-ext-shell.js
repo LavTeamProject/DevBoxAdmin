@@ -309,3 +309,48 @@ Object.assign(I18N.en, {
  "navg.stopped": "{name}: stopped",
  "nav.packages": "Packages & apps"
 });
+
+Object.assign(I18N.ru, {
+ "projects.installCmd": "Установка зависимостей",
+ "projects.lintCmd": "Линтер",
+ "projects.devCmd": "Dev-сервер",
+ "projects.presetSuggest": "Подставить по проекту",
+ "projects.presetSuggested": "Подставлено команд: {n}. Проверьте и сохраните.",
+ "projects.presetNothing": "Подсказок нет: пустые поля не найдены или тип проекта не распознан",
+ "runs.runInstall": "Установить зависимости",
+ "runs.runLint": "Запустить линтер",
+ "runs.devStart": "Запустить dev-сервер",
+ "runs.devStop": "Остановить dev-сервер",
+ "runs.devRunning": "dev-сервер работает",
+ "runs.devStarted": "Dev-сервер запускается — вывод во вкладке «Процессы»",
+ "runs.devStopped": "Dev-сервер останавливается",
+ "runs.confirmDev": "Запустить dev-сервер «{cmd}»? Он будет работать, пока вы его не остановите."
+});
+Object.assign(I18N.en, {
+ "projects.installCmd": "Install dependencies",
+ "projects.lintCmd": "Lint",
+ "projects.devCmd": "Dev server",
+ "projects.presetSuggest": "Fill from project",
+ "projects.presetSuggested": "Filled {n} commands. Check them and save.",
+ "projects.presetNothing": "No suggestions: no empty fields, or the project type was not recognised",
+ "runs.runInstall": "Install dependencies",
+ "runs.runLint": "Run lint",
+ "runs.devStart": "Start dev server",
+ "runs.devStop": "Stop dev server",
+ "runs.devRunning": "dev server running",
+ "runs.devStarted": "Dev server is starting — output is in the Processes tab",
+ "runs.devStopped": "Dev server is stopping",
+ "runs.confirmDev": "Start the dev server “{cmd}”? It keeps running until you stop it."
+});
+
+Object.assign(I18N.ru, {"runs.noPreset": "Задайте команды в пресете (или нажмите «Подставить по проекту»), чтобы запускать их кнопками и агентом."});
+Object.assign(I18N.en, {"runs.noPreset": "Set the commands in the preset (or press “Fill from project”) to run them with buttons and by the agent."});
+
+Object.assign(I18N.ru, {"app.php.note": "Выбор PHP из <b>Herd</b> также запускает <code>herd use</code>, поэтому сайты Herd тоже переключаются на эту версию. Выбор PHP из <b>Homebrew</b> меняет только CLI. Уже открытые терминалы подхватывают изменение сразу, без <code>source</code>. Другие версии PHP из Homebrew — в карточке «Версии из Homebrew» ниже."});
+Object.assign(I18N.en, {"app.php.note": "Choosing PHP from <b>Herd</b> also runs <code>herd use</code>, so Herd sites switch versions too. Choosing <b>Homebrew</b> PHP only changes the CLI. Terminals that are already open pick it up immediately, no <code>source</code> needed. Other Homebrew PHP versions are in the “Versions from Homebrew” card below."});
+
+Object.assign(I18N.ru, {"lang.npmGlobal": "Глобальные пакеты npm", "lang.npmGlobalHint": "Ставятся в активный Node {v}: при смене версии по умолчанию у другой версии свой набор.", "lang.npmReadFail": "Не удалось прочитать список (npm не найден у активного Node)."});
+Object.assign(I18N.en, {"lang.npmGlobal": "Global npm packages", "lang.npmGlobalHint": "Installed into the active Node {v}: another default version has its own set.", "lang.npmReadFail": "Could not read the list (npm not found next to the active Node)."});
+
+Object.assign(I18N.ru, {"runs.status.stopped": "остановлен"});
+Object.assign(I18N.en, {"runs.status.stopped": "stopped"});

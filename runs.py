@@ -22,11 +22,12 @@ from http import HTTPStatus
 
 import gitops
 import projects
-from core import DATA_DIR, ENV, ApiError, start_steps
+from core import DATA_DIR, ENV, ApiError, StepFailed, project_env, start_steps
 
 RUNS_DIR = os.path.join(DATA_DIR, "runs")
 INDEX = os.path.join(DATA_DIR, "runs.jsonl")
-KINDS = ("test", "build")
+KINDS = ("install", "lint", "test", "build")   # конечные запуски (лимит RUN_TIMEOUT)
+DEV = "dev"                                   # dev-сервер: без лимита, до остановки
 RUN_TIMEOUT = 30 * 60
 MAX_RUNS = 300
 LOG_MAX = 5 * 1024 * 1024
@@ -84,9 +85,9 @@ def history(q=None):
     if q.get("project"):
         real = projects._canon(os.path.realpath(q["project"]))  # noqa: SLF001
         rows = [r for r in rows if r.get("project") == real]
-    if q.get("kind") in KINDS:
+    if q.get("kind") in KINDS + (DEV,):
         rows = [r for r in rows if r.get("kind") == q["kind"]]
-    if q.get("status") in ("ok", "failed", "timeout", "error"):
+    if q.get("status") in ("ok", "failed", "timeout", "error", "stopped"):
         rows = [r for r in rows if r.get("status") == q["status"]]
     try:
         limit = max(1, min(int(q.get("limit") or 50), 300))
@@ -110,15 +111,23 @@ def run_log(q):
 
 # ---------------------------------------------------------------- запуск test/build
 
-def _runner(run_id, project, kind, command, argv, job_ref):
+def _runner(run_id, project, kind, command, argv, job_ref, timeout=RUN_TIMEOUT):
     def step(log):
         t0 = time.time()
         os.makedirs(RUNS_DIR, mode=0o700, exist_ok=True)
         status, code, written = "error", None, 0
         logf = os.open(os.path.join(RUNS_DIR, run_id + ".log"), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         try:
-            proc = subprocess.Popen(argv, cwd=project, env=ENV, text=True, bufsize=1, stdin=subprocess.DEVNULL,
+            env = project_env()           # интерактивная оболочка — до 20 с; отмену в это время проверяем ниже
+            if getattr(log, "cancelled", lambda: False)():
+                status = "stopped"
+                raise StepFailed(143)
+            proc = subprocess.Popen(argv, cwd=project, env=env, text=True, bufsize=1, stdin=subprocess.DEVNULL,
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
+            if hasattr(log, "attach"):
+                log.attach(proc)          # «Остановить» и отмена плана агентом убивают группу процессов теста
+            if kind == DEV:
+                _dev_pidfile(project, proc.pid, argv[0])   # переживает перезапуск панели: сервер можно найти и остановить
             timed_out = {"v": False}
 
             def watchdog():
@@ -128,8 +137,9 @@ def _runner(run_id, project, kind, command, argv, job_ref):
                         os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
                     except (ProcessLookupError, PermissionError):
                         pass
-            timer = threading.Timer(RUN_TIMEOUT, watchdog)
-            timer.start()
+            timer = threading.Timer(timeout, watchdog) if timeout else None
+            if timer:
+                timer.start()
             try:
                 for line in proc.stdout:
                     line = line.rstrip("\n")
@@ -139,29 +149,99 @@ def _runner(run_id, project, kind, command, argv, job_ref):
                         written += os.write(logf, chunk)
                 code = proc.wait()
             finally:
-                timer.cancel()
-            status = "timeout" if timed_out["v"] else ("ok" if code == 0 else "failed")
+                if timer:
+                    timer.cancel()
+            stopped = getattr(log, "cancelled", lambda: False)()
+            status = "timeout" if timed_out["v"] else ("ok" if code == 0 else "stopped" if stopped else "failed")
             if timed_out["v"]:
-                log(f"⏱ Превышен лимит {RUN_TIMEOUT // 60} мин — процесс остановлен.")
+                log(f"⏱ Превышен лимит {timeout // 60} мин — процесс остановлен.")
+        except StepFailed:
+            pass
         except Exception as e:  # noqa: BLE001
             log(f"ERROR: {e}")
             os.write(logf, f"ERROR: {e}\n".encode())
         finally:
             os.close(logf)
+            if kind == DEV:
+                _dev_pidfile(project, None)
             _record({"id": run_id, "project": project, "name": os.path.basename(project), "kind": kind,
                      "command": command, "started": t0, "duration": round(time.time() - t0, 1), "code": code,
                      "status": status, "job": job_ref.get("job")})
         if status != "ok":
-            raise RuntimeError(f"{kind}: {status}" + (f" (exit {code})" if code is not None else ""))
+            # настоящий код выхода (тест упал = 1, таймаут = 124, остановлен = 143, не запустилось = 127), а не обобщённый -1
+            rc = 124 if status == "timeout" else 143 if status == "stopped" else (code if code not in (None, 0) else 127)
+            log(f"{kind}: {status} (exit {rc})")
+            raise StepFailed(rc)
     return step
+
+
+def _dev_key(project):
+    return hashlib.sha1(project.encode()).hexdigest()[:10]
+
+
+def _dev_pidfile(project, pid, exe=None):
+    """Файл runs/dev-<ключ>.json: pid группы dev-сервера и его команда. None — удалить (сервер завершился)."""
+    path = os.path.join(RUNS_DIR, f"dev-{_dev_key(project)}.json")
+    if pid is None:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+        return
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump({"pid": pid, "exe": os.path.basename(exe or ""), "started": time.time()}, f)
+
+
+def _dev_orphan(project):
+    """dev-сервер, запущенный до перезапуска панели: pid из файла, если процесс жив и это та же команда (защита от чужого pid)."""
+    try:
+        with open(os.path.join(RUNS_DIR, f"dev-{_dev_key(project)}.json")) as f:
+            d = json.load(f)
+        pid = int(d["pid"])
+        os.kill(pid, 0)
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    out = subprocess.run(["ps", "-p", str(pid), "-o", "command="], capture_output=True, text=True).stdout
+    return pid if d.get("exe") and d["exe"] in out else None
+
+
+def dev_status(q):
+    """GET /api/runs/dev?project= → запущен ли dev-сервер проекта (job, либо «осиротевший» процесс после перезапуска панели)."""
+    from core import JOBS
+    project = projects.resolve(q.get("project"))
+    kind = "dev:" + _dev_key(project)
+    job = next((j for j in sorted(JOBS.values(), key=lambda j: -j["started"]) if j["kind"] == kind and not j["done"]), None)
+    if job:
+        return {"running": True, "job": job["id"]}
+    pid = _dev_orphan(project)
+    return {"running": bool(pid), "job": None, "orphan": bool(pid)}
+
+
+def dev_stop(body):
+    """POST /api/runs/dev-stop {project}: остановить dev-сервер проекта — задачу панели или процесс, оставшийся после перезапуска."""
+    from core import cancel_job
+    project = projects.resolve(body.get("project"))
+    st = dev_status({"project": project})
+    if st["job"]:
+        return cancel_job({"id": st["job"]})
+    pid = _dev_orphan(project)
+    if not pid:
+        return {"ok": True, "note": "not running"}
+    try:
+        os.killpg(pid, signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        pass
+    _dev_pidfile(project, None)
+    return {"ok": True}
 
 
 def start(body):
     """POST /api/runs/start {project, kind: test|build} → job. Команда — только из пресета проекта."""
     project = projects.resolve(body.get("project"))
     kind = body.get("kind")
-    if kind not in KINDS:
-        raise ApiError("Тип запуска: test | build", code="run.bad_kind")
+    if kind not in KINDS and kind != DEV:
+        raise ApiError("Тип запуска: install | lint | test | build | dev", code="run.bad_kind")
     command = projects.presets_get(project).get(kind) or ""
     if not command:
         raise ApiError(f"В пресете проекта не задана команда {kind}", HTTPStatus.CONFLICT, code="run.no_cmd", kind=kind)
@@ -169,8 +249,10 @@ def start(body):
     run_id = "r" + secrets.token_hex(3)
     job_ref = {}
     label = f"{os.path.basename(project)}: {kind} ({command})"
-    job = start_steps(label, [(command, _runner(run_id, project, kind, command, argv, job_ref), {})],
-                      "run:" + hashlib.sha1(project.encode()).hexdigest()[:10])
+    key = hashlib.sha1(project.encode()).hexdigest()[:10]
+    # dev-сервер живёт отдельно от test/build (тесты можно гонять при запущенном сервере) и без лимита времени
+    job = start_steps(label, [(command, _runner(run_id, project, kind, command, argv, job_ref, None if kind == DEV else RUN_TIMEOUT), {})],
+                      ("dev:" if kind == DEV else "run:") + key)
     job_ref["job"] = job
     return {"job": job, "run": run_id, "label": label}
 

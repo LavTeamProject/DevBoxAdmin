@@ -26,8 +26,8 @@ tabs.runs = {
     view.innerHTML = `
       <div class="ro-banner"><span>${esc(t("runs.intro"))}</span></div>
       <form class="row" id="runsFilters" style="gap:8px;margin-bottom:12px">
-        <select name="kind">${opt("", t("runs.f.allKinds"), f.kind)}${opt("test", "test", f.kind)}${opt("build", "build", f.kind)}</select>
-        <select name="status">${opt("", t("runs.f.allStatuses"), f.status)}${["ok", "failed", "timeout", "error"].map((x) => opt(x, t("runs.status." + x), f.status)).join("")}</select>
+        <select name="kind">${opt("", t("runs.f.allKinds"), f.kind)}${["install", "lint", "test", "build", "dev"].map((k) => opt(k, k, f.kind)).join("")}</select>
+        <select name="status">${opt("", t("runs.f.allStatuses"), f.status)}${["ok", "failed", "timeout", "error", "stopped"].map((x) => opt(x, t("runs.status." + x), f.status)).join("")}</select>
         <button type="submit" class="primary">${esc(t("audit.f.apply"))}</button></form>
       ${d.runs.length ? `<div class="card"><div class="table-wrap"><table>
         <thead><tr><th>${esc(t("audit.col.time"))}</th><th>${esc(t("tasks.project"))}</th><th>${esc(t("runs.col.kind"))}</th><th>${esc(t("runs.col.command"))}</th>

@@ -41,7 +41,9 @@ MAX_FAILS_PER_WINDOW = 4  # всего неудач агента за окно
 DIALOG_SECONDS = approval.DIALOG_SECONDS
 KEEP_PLANS = 200
 AGENT_OPS_L3 = ("runner.spawn", "runner.selftest")  # внешние действия CI: только агентам уровня L3 и ТОЛЬКО через диалог
-AGENT_OPS = ("snapshot.create", "backup.run", "profile.install", "package.install", "project.run", "docker.container_control", *AGENT_OPS_L3)
+AGENT_OPS = ("snapshot.create", "backup.run", "profile.install", "package.install", "project.run", "docker.container_control",
+             # ревью 2026-10, шаг 4 (docs/roadmap.md): версии языков, сервисы для тестов, compose без down
+             "lang.select", "python.install", "service.start", "service.stop", "service.restart", "docker.compose_control", *AGENT_OPS_L3)
 MAX_L3_PER_HOUR = 3
 MAX_L3_PROPOSALS = 6    # предложений L3 в час на агента: иначе поток диалогов утомляет человека
 MAX_PLAN_SECONDS = 30 * 60    # одна задача агента (кроме L3: у раннеров свои сроки) не живёт дольше — иначе её останавливает сервер
@@ -141,11 +143,21 @@ def _digest(op_id, params):
     return hashlib.sha256(json.dumps(core, sort_keys=True, default=str, ensure_ascii=False).encode()).hexdigest(), pl
 
 
+def _red_run(p):
+    """Тест/сборка проекта отработали и вернули ненулевой код (красные тесты). Это нормальный шаг цикла
+    «исправил → перезапустил», а не сбой панели: в эскалацию не считаем. Таймаут (124), отмена (143),
+    «не запустилось» (-1/127) и потерянная задача — считаем."""
+    if p.get("operation") != "project.run" or _status(p) != "failed":
+        return False
+    job = JOBS.get(p.get("job"))
+    return bool(job and job["done"] and job["code"] not in (None, -1, 124, 127, 143) and job["code"] > 0)
+
+
 def _escalation(plans, agent, op_id, params):
     """Границы цикла «диагностика → исправление»: повторяющаяся ошибка или много неудач → стоп и эскалация человеку."""
     now = time.time()
     bad = [x for x in plans if x["agent_id"] == agent["id"] and now - x["created"] < ESCALATE_WINDOW
-           and _status(x) in ("failed", "stale", "rejected")]
+           and _status(x) in ("failed", "stale", "rejected") and not _red_run(x)]
     same = [x for x in bad if x["operation"] == op_id and x["params"] == params]
     if len(same) >= MAX_SAME_FAILS:
         return "same", len(same)

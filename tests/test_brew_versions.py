@@ -94,11 +94,32 @@ if __name__ == "__main__":
 class UninstallBlocker(unittest.TestCase):
     def test_selected_and_panel_python_blocked(self):
         import runtimes
-        info = {"selected": "brew:node@20", "installs": [{"id": "brew:node@20", "source": "Homebrew", "real": runtimes.BREW_PREFIX + "/Cellar/node@20/20.1/bin/node"},
-                                                         {"id": "brew:node@22", "source": "Homebrew", "real": runtimes.BREW_PREFIX + "/Cellar/node@22/22.1/bin/node"}]}
-        with mock.patch.dict(runtimes.INFO, {"node": lambda q: info, "python": lambda q: {}, "go": lambda q: {}, "ruby": lambda q: {}, "java": lambda q: {}}):
+        st = {"node_default": "brew:node@20", "php": "brew:php@8.3",
+              "env": {"java": {"JAVA_HOME": runtimes.BREW_PREFIX + "/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home"}}}
+        with mock.patch.object(runtimes, "load_state", return_value=st), mock.patch.object(runtimes, "panel_formula", return_value="python@3.12"):
             self.assertEqual(runtimes.uninstall_blocker("node@20"), "node")
+            self.assertEqual(runtimes.uninstall_blocker("php@8.3"), "php")
+            self.assertEqual(runtimes.uninstall_blocker("openjdk@17"), "java")
+            self.assertEqual(runtimes.uninstall_blocker("python@3.12"), "python")      # на нём работает панель
             self.assertIsNone(runtimes.uninstall_blocker("node@22"))
+
+    def test_go_plain_brew_id_and_registered_jdk(self):
+        import runtimes
+        cellar = runtimes.BREW_PREFIX + "/Cellar/openjdk@21/21.0.1/libexec/openjdk.jdk/Contents/Home"
+        st = {"go_default": "brew", "env": {"java": {"JAVA_HOME": "/Library/Java/JavaVirtualMachines/openjdk-21.jdk/Contents/Home"}}}
+        with mock.patch.object(runtimes, "load_state", return_value=st), mock.patch.object(runtimes, "panel_formula", return_value=None), \
+             mock.patch("os.path.realpath", side_effect=lambda x: cellar if x.startswith("/Library/Java") else x):
+            self.assertEqual(runtimes.uninstall_blocker("go"), "go")
+            self.assertEqual(runtimes.uninstall_blocker("openjdk@21"), "java")
+
+    def test_versions_card_marks_default(self):
+        import runtimes
+        with mock.patch.object(runtimes, "_brew_formulae", return_value=["node", "node@22", "node@20"]), \
+             mock.patch.object(runtimes, "_brew_installed_names", return_value={"node@20", "node@22"}), \
+             mock.patch.object(runtimes, "selected_formula", return_value="node@20"), mock.patch.object(runtimes, "panel_formula", return_value=None), \
+             mock.patch.object(runtimes.sys, "platform", "darwin"):
+            rows = {r["formula"]: r["default"] for r in runtimes.brew_versions({"key": "node"})["available"]}
+        self.assertEqual(rows, {"node": False, "node@22": False, "node@20": True})
 
 
 class ToolsCache(unittest.TestCase):

@@ -83,7 +83,12 @@ def source_of(path):
              (f"{HOME}/.local/share/uv", "uv"), (f"{HOME}/sdk/go", "golang.org/dl"),
              ("/Library/Java/JavaVirtualMachines", "Зарегистрированный JDK"), ("/Applications/Xcode", "Xcode"),
              ("/Library/Developer/CommandLineTools", "Xcode CLT"), ("/usr/bin/", "macOS" if sys.platform == "darwin" else "system"),
-             ("/System/", "macOS"), (f"{HOME}/.deno", "deno"), (f"{HOME}/.bun", "bun")]
+             ("/System/", "macOS"), (f"{HOME}/.deno", "deno"), (f"{HOME}/.bun", "bun"),
+             # менеджеры версий: панель их не меняет, но показывает честно, откуда версия
+             (f"{HOME}/.local/share/mise", "mise"), (f"{HOME}/.asdf", "asdf"), (f"{HOME}/.sdkman", "sdkman"),
+             (f"{HOME}/.local/share/fnm", "fnm"), (f"{HOME}/Library/Application Support/fnm", "fnm"), (f"{HOME}/.fnm", "fnm"),
+             (f"{HOME}/.volta", "volta"), (f"{HOME}/.nvm", "nvm"), (f"{HOME}/.rubies", "chruby"), (f"{HOME}/.goenv", "goenv"),
+             (f"{HOME}/miniconda3", "conda"), (f"{HOME}/anaconda3", "conda"), (f"{HOME}/miniforge3", "conda"), (f"{HOME}/.jenv", "jenv")]
     for prefix, label in rules:
         if path and path.startswith(prefix) or real.startswith(prefix):
             return label
@@ -113,6 +118,10 @@ def detect(force=False):
             continue
         if path.startswith("/usr/bin/") and not clt and key in ("python", "swift", "ruby"):
             continue
+        jh = probe.get("ENV_JAVA_HOME") or ""
+        if key == "java" and path == "/usr/bin/java" and jh and os.path.exists(os.path.join(jh, "bin", "java")):
+            # /usr/bin/java — заглушка macOS: JDK она находит по JAVA_HOME терминала, а у сервера его нет. Берём ту же JDK, что увидит терминал
+            path = os.path.join(jh, "bin", "java")
         found.append((key, name, path, args))
     with ThreadPoolExecutor(8) as pool:
         versions = list(pool.map(lambda f: version_of(f[2], f[3]), found))
@@ -679,7 +688,18 @@ def ruby_info(q):
 
 
 def ruby_action(body):
-    if body.get("action") != "select":
+    action, name = body.get("action"), str(body.get("name", ""))
+    if action in ("gem-install", "gem-uninstall"):
+        if not PKG_RE.match(name) or "/" in name or LOCAL_ARCHIVE_RE.search(name):
+            raise ApiError("недопустимое имя гема", code="lang.package_name_invalid")
+        path, _ = active("ruby")
+        if not path or path == "/usr/bin/ruby":
+            raise ApiError("Системный Ruby macOS: гемы в него ставятся только с правами администратора. Выберите Ruby из Homebrew",
+                           HTTPStatus.CONFLICT, code="lang.system_ruby")
+        gem = os.path.join(os.path.dirname(os.path.realpath(path)), "gem")
+        cmd = [gem, "install", name] if action == "gem-install" else [gem, "uninstall", "-x", "-a", name]
+        return {"job": start_job(f"gem {'install' if action == 'gem-install' else 'uninstall'} {name}", cmd, "ruby", env=env_for(gem))}
+    if action != "select":
         raise ApiError("недопустимое действие", code="lang.action_invalid")
     return select_shims("ruby", ruby_installs(), body.get("id"),
                         lambda t: link_bin(os.path.dirname(t["bin"]), ("ruby", "gem", "irb", "bundle", "rake", "erb")))
@@ -723,6 +743,9 @@ def brew_versions(q):
     rows.sort(key=lambda r: [int(x) for x in r["version"].split(".")], reverse=True)
     if base in names:
         rows.insert(0, {"formula": base, "version": "latest", "installed": base in have, "latest": True})
+    keep = {selected_formula(key), panel_formula()} - {None}
+    for r in rows:      # основную и ту, на которой работает панель, удалить нельзя — кнопку не показываем
+        r["default"] = r["formula"] in keep
     return {"key": key, "supported": True, "base": base, "available": rows}
 
 
@@ -765,17 +788,54 @@ def node_installs():
     return uniq(items)
 
 
+NPM_RE = re.compile(r"^(@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*(@[A-Za-z0-9._^~<>=-]+)?$")   # пакет npm, в т. ч. @scope/name@версия
+NPM_KEEP = {"npm", "corepack"}
+LOCAL_ARCHIVE_RE = re.compile(r"\.(tgz|tar|tar\.gz|gem|zip)$", re.I)   # npm/gem приняли бы это как ЛОКАЛЬНЫЙ файл, а не пакет из реестра
+
+
+def _npm():
+    """npm активного Node (тот, что увидит новый терминал) — рядом с node в той же папке."""
+    path, _ = active("node")
+    if not path:
+        return None
+    npm = os.path.join(os.path.dirname(os.path.realpath(path)), "npm")
+    return npm if os.path.exists(npm) else None
+
+
+def node_packages():
+    npm = _npm()
+    if not npm:
+        return None
+    code, out, _ = run([npm, "ls", "-g", "--depth=0", "--json"], timeout=60, env=env_for(npm))
+    try:
+        deps = json.loads(out or "{}").get("dependencies") or {}
+    except ValueError:
+        return None
+    return [{"name": n, "version": (v or {}).get("version", "")} for n, v in sorted(deps.items())]
+
+
 def node_info(q):
     installs = node_installs()
     path, _ = active("node")
     return {"key": "node", "name": "Node.js", "installs": installs, "selectable": True,
             "selected": load_state().get("node_default") if os.path.islink(os.path.join(SHIM_DIR, "node")) else None,
             "active": {"path": path, "version": version_of(path, ["-v"]) if path else None, "source": source_of(path)},
-            "formula": "node"}
+            "formula": "node", "packages": node_packages()}
 
 
 def node_action(body):
-    if body.get("action") != "select":
+    action, name = body.get("action"), str(body.get("name", ""))
+    if action in ("npm-install", "npm-uninstall"):
+        if not NPM_RE.match(name) or LOCAL_ARCHIVE_RE.search(name):
+            raise ApiError("недопустимое имя пакета npm", code="lang.package_name_invalid")
+        if action == "npm-uninstall" and name.split("@")[0] in NPM_KEEP:
+            raise ApiError("npm и corepack удалять нельзя", code="lang.pkg_protected", name=name)
+        npm = _npm()
+        if not npm:
+            raise ApiError("`npm` не найден", HTTPStatus.NOT_FOUND, code="lang.tool_not_found", name="npm")
+        sub = "install" if action == "npm-install" else "uninstall"
+        return {"job": start_job(f"npm {sub} -g {name}", [npm, sub, "-g", name], "node", env=env_for(npm))}
+    if action != "select":
         raise ApiError("недопустимое действие", code="lang.action_invalid")
     return select_shims("node", node_installs(), body.get("id"), lambda t: link_bin(os.path.dirname(t["bin"]), ("node", "npm", "npx", "corepack")))
 
@@ -795,19 +855,34 @@ INFO = {"python": python_info, "go": go_info, "rust": rust_info, "java": java_in
 ACTIONS = {"python": python_action, "go": go_action, "rust": rust_action, "java": java_action, "ruby": ruby_action, "node": node_action}
 
 
+def selected_formula(key):
+    """Формула Homebrew, выбранная в панели основной для языка (по состоянию панели, без запуска инструментов), или None."""
+    st = load_state()
+    if key == "java":
+        jh = ((st.get("env") or {}).get("java") or {}).get("JAVA_HOME", "")
+        m = re.search(re.escape(BREW_PREFIX) + r"/opt/([^/]+)/", jh)
+        # зарегистрированная JDK (/Library/Java/JavaVirtualMachines/…) — символическая ссылка на keg Homebrew: идём по realpath
+        return m.group(1) if m else (brew_formula_of({"real": os.path.realpath(jh)}) if jh else None)
+    sel = st.get("php") if key == "php" else st.get(f"{key}_default")
+    if sel == "brew":                     # у Go основная формула Homebrew — id «brew» (без суффикса)
+        return BREW_VERSIONED.get(key, (None,))[0]
+    return sel[5:] if isinstance(sel, str) and sel.startswith("brew:") else None
+
+
+def panel_formula():
+    """Формула Homebrew, на Python которой работает сама панель (если так)."""
+    return brew_formula_of({"real": os.path.realpath(sys.executable)})
+
+
 def uninstall_blocker(formula):
-    """Ключ языка, если формула — выбранная по умолчанию версия этого языка или Python/Node, на которых работает панель; иначе None.
-    Проверка на сервере: кнопку прячет и интерфейс, но удалить через API (или по плану агента) такую версию нельзя — ссылки в ~/.service-admin/bin остались бы битыми."""
-    me = os.path.realpath(sys.executable)
-    for key in ("node", "python", "go", "ruby", "java"):
-        try:
-            info = INFO[key]({})
-        except Exception:  # noqa: BLE001 — не смогли разобрать язык: не мешаем удалению
-            continue
-        sel = info.get("selected")
-        for i in info.get("installs") or []:
-            if brew_formula_of(i) == formula and (i.get("id") == sel or i.get("real") == me):
-                return key
+    """Ключ языка, если формула — выбранная по умолчанию версия этого языка или Python, на котором работает панель; иначе None.
+    Проверка на сервере (интерфейс тоже прячет кнопку): иначе ссылки в ~/.service-admin/bin остались бы битыми.
+    Читает только состояние панели — без запуска pip/go/curl, поэтому быстрая."""
+    if formula and formula == panel_formula():
+        return "python"
+    for key in ("node", "python", "go", "ruby", "java", "php"):
+        if selected_formula(key) == formula:
+            return key
     return None
 
 
