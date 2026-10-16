@@ -81,13 +81,10 @@ tabs.profiles = {
         <span class="spacer"></span>
         ${btn(t("profiles.rescan"), "profilesReload")}
       </div>
-      ${ROLE_ORDER.filter((r) => d.profiles.some((p) => (p.role || "all") === r)).map((r) => `<h2>${esc(t("profiles.role." + r))}</h2>
-        <div class="list">${d.profiles.filter((p) => (p.role || "all") === r).map(card).join("")}</div>`).join("")}
+      <div class="list">${d.profiles.map(card).join("")}</div>
       <p class="muted small">${t("profiles.outside")}</p>`;
   },
 };
-
-const ROLE_ORDER = ["all", "ai", "mobile", "backend", "web"];
 
 // Nama profil: produk, bukan prosa — dipetakan di sini supaya tetap satu tempat.
 const PROFILE_NAMES = {

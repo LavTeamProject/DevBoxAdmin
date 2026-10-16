@@ -78,7 +78,7 @@ ITEMS = {i["id"]: i for i in [
 ]}
 
 
-def _p(id_, icon, role, variant, refs):
+def _p(id_, icon, refs):
     """Профиль = ссылки на ITEMS. ref = "id" или ("id", required) — переопределяет обязательность только в этом профиле."""
     items = []
     for ref in refs:
@@ -87,20 +87,20 @@ def _p(id_, icon, role, variant, refs):
         if req is not None:
             item["required"] = req
         items.append(item)
-    return {"id": id_, "icon": icon, "role": role, "variant": variant, "items": items}
+    return {"id": id_, "icon": icon, "items": items}
 
 
 PROFILES_MAC = [
-    _p("base", "homebrew", "all", None, ["clt", "homebrew", "python", "git", "gh", "fzf", "jq", "yq", "ripgrep", "lazygit", "lazydocker", "git-delta"]),
-    _p("ai", "claude", "ai", None, [("claude", True), "codex", "opencode", "gemini", ("node", True), "bun", "gh", "lazygit"]),
-    _p("flutter", "flutter", "mobile", "flutter", [("flutter", True), "fvm", "dart", ("java", True), ("android-sdk", True), "android-studio", "cocoapods", "fastlane"]),
-    _p("ios", "apple", "mobile", "ios", ["xcode", "clt", "xcodes", "runtimes", "cocoapods", "fastlane", "swiftformat", "xcbeautify"]),
-    _p("backend", "docker", "backend", "common", [("docker", True), "postgresql", "redis", "mysql", "go", "rust", "python"]),
-    _p("backend-php", "php", "backend", "php", [("php", True), ("composer", True), "herd", "mysql", "redis", "docker", "node", "cloudflared"]),
-    _p("backend-node", "node", "backend", "node", [("node", True), "pnpm", "postgresql", "redis", "docker", "cloudflared"]),
-    _p("backend-python", "python", "backend", "python", [("python", True), "uv", "pipx", "postgresql", "redis", "docker"]),
-    _p("backend-go", "go", "backend", "go", [("go", True), "postgresql", "redis", "docker"]),
-    _p("web", "node", "web", None, [("node", True), "pnpm", "yarn", ("git", True), "gh", "chrome", "mkcert", "httpie"]),
+    _p("base", "homebrew", ["clt", "homebrew", "python", "git", "gh", "fzf", "jq", "yq", "ripgrep", "lazygit", "lazydocker", "git-delta"]),
+    _p("ai", "claude", [("claude", True), "codex", "opencode", "gemini", ("node", True), "bun", "gh", "lazygit"]),
+    _p("flutter", "flutter", [("flutter", True), "fvm", "dart", ("java", True), ("android-sdk", True), "android-studio", "cocoapods", "fastlane"]),
+    _p("ios", "apple", ["xcode", "clt", "xcodes", "runtimes", "cocoapods", "fastlane", "swiftformat", "xcbeautify"]),
+    _p("backend", "docker", [("docker", True), "postgresql", "redis", "mysql", "go", "rust", "python"]),
+    _p("backend-php", "php", [("php", True), ("composer", True), "herd", "mysql", "redis", "docker", "node", "cloudflared"]),
+    _p("backend-node", "node", [("node", True), "pnpm", "postgresql", "redis", "docker", "cloudflared"]),
+    _p("backend-python", "python", [("python", True), "uv", "pipx", "postgresql", "redis", "docker"]),
+    _p("backend-go", "go", [("go", True), "postgresql", "redis", "docker"]),
+    _p("web", "node", [("node", True), "pnpm", "yarn", ("git", True), "gh", "chrome", "mkcert", "httpie"]),
 ]
 
 def _lp(pid_item, name, pkg, required=False, detect_pkg=None):
@@ -128,10 +128,7 @@ PROFILES_LINUX = [
     {"id": "linux-containers", "icon": "docker", "items": [
         _lp("docker", "Docker Engine", "docker.io"), _lp("compose", "Docker Compose", "docker-compose-v2")]},
 ]
-LINUX_ROLES = {"linux-base": ("all", None), "linux-backend": ("backend", "common"), "linux-flutter": ("mobile", "flutter"), "linux-containers": ("backend", "containers")}
-for _pr in PROFILES_LINUX:
-    _pr["role"], _pr["variant"] = LINUX_ROLES.get(_pr["id"], ("all", None))
-PROFILES_LINUX.append({"id": "linux-web", "icon": "node", "role": "web", "variant": None,
+PROFILES_LINUX.append({"id": "linux-web", "icon": "node",
                        "items": [_lp("git", "Git", "git", True), _lp("curl", "curl", "curl"), _lp("nodejs", "Node.js (apt)", "nodejs", True), _lp("npm", "npm", "npm", True)]})
 PROFILES = PROFILES_MAC if sys.platform == "darwin" else PROFILES_LINUX
 PROFILE_IDS = {p["id"] for p in PROFILES}
@@ -373,7 +370,7 @@ def catalog(q=None):
                           "install": _install_kind(item), **extra, **state})
         have = sum(1 for i in items if i["installed"])
         missing_required = [i["id"] for i in items if i["required"] and not i["installed"]]
-        profiles.append({"id": profile["id"], "icon": profile["icon"], "role": profile.get("role", "all"), "variant": profile.get("variant"), "items": items,
+        profiles.append({"id": profile["id"], "icon": profile["icon"], "items": items,
                          "have": have, "total": len(items), "ready": not missing_required,
                          "missing_required": missing_required})
     data = {"profiles": profiles, "readonly": False}

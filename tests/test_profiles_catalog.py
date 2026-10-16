@@ -11,12 +11,11 @@ import profiles  # noqa: E402
 
 
 class Catalog(unittest.TestCase):
-    def test_ids_unique_and_profiles_have_roles(self):
+    def test_ids_unique(self):
         for plist in (profiles.PROFILES_MAC, profiles.PROFILES_LINUX):
             ids = [p["id"] for p in plist]
             self.assertEqual(len(ids), len(set(ids)))
             for p in plist:
-                self.assertIn(p["role"], ("all", "ai", "mobile", "backend", "web"), p["id"])
                 self.assertEqual(len({i["id"] for i in p["items"]}), len(p["items"]), f"duplicate item in {p['id']}")
 
     def test_each_tool_is_defined_once_profiles_only_override_required(self):
@@ -65,10 +64,9 @@ class Catalog(unittest.TestCase):
         items = {i["id"]: i for p in d["profiles"] if p["id"] == "backend" for i in p["items"]}
         self.assertIsNone(items["postgresql"]["running"])
 
-    def test_item_states_and_roles_are_exposed(self):
+    def test_item_states_are_exposed(self):
         d = self.fake_catalog(set(), {})
         prof = {p["id"]: p for p in d["profiles"]}
-        self.assertEqual((prof["backend-php"]["role"], prof["backend-php"]["variant"]), ("backend", "php"))
         flutter = {i["id"]: i for i in prof["flutter"]["items"]}
         self.assertTrue(flutter["android-sdk"]["consent"])            # лицензии Android SDK — согласие человека
         self.assertEqual(flutter["android-studio"]["install"], "manual")

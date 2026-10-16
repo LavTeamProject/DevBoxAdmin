@@ -5,7 +5,7 @@ Status: **a plan, waits for the owner's decision.** The menu and pages are not c
 ## 0. The owner's decisions (2026-10-15)
 1. The menu map (5 groups) is accepted ("seems fine"); the owner asked to check against similar products (section 11).
 2. **Node — through Homebrew only** (a single manager). Consequence: Homebrew gives only **versioned formulae** (`node@20`, `node@22`, …) and drops unsupported ones; exact old versions need another mechanism — see "Old versions" below and question 1.
-3. Future roles (Data/ML, Game, DevOps, Embedded, etc.) are **added to "Getting started" marked "in development"** with a "I want this" button — to understand demand and priority (mechanism — section 12).
+3. **There will be no roles** ("roles are not needed, there are categories where things are grouped"): categories are the menu groups (Environment, Development, AI agents, Machines & data, System). There is no "who are you" choice; "I want this" and the cards of future roles are cancelled.
 4. **Old versions:** the owner expects to install not only the latest but also **old versions** of tools (Python, Node, PHP, Flutter, Go…). This is part of stage U3: each language gets a list of available versions (including old), "install", "make main", "remove".
 5. We start with U2 ("probably").
 
@@ -28,14 +28,14 @@ Real duplicates and "one function in different corners":
 - **Logs:** "Audit", the "Processes" panel, the run history, the agents log.
 - **The profile catalog duplicates itself:** gh and lazygit in two profiles, clt, CocoaPods/fastlane (Flutter and iOS); the Backend profile has **no** PHP, Composer, Herd or Node; Node in a profile is installed as `brew node@22` while the Node page manages nvm — two version managers conflict (a profile shows ✓, the page says "no nvm"). Profiles are flat lists with no "choose one language".
 - Two different sub-tab mechanisms (`docker.js`, `connect.js`), no common page template; no frontend tests (Python only).
-- No entry **by role** and no "attention center" (what needs action).
+- No "attention center" (what needs action).
 - Already fixed: the "Packages" page failing as a whole (blocks now load independently); agent approvals are now in one section. Remaining: the "Agent connections" page loads five requests in a row every 5 s.
 
 ## 2. Principles (as in good web panels: ISPmanager, Plesk, cPanel)
 1. **One task — one place.** A setting lives on one page; other pages only link. No copies.
 2. **A menu by objects and tasks**, with no one-item groups.
 3. **One page template:** title + status chips + a primary action; tabs; "list → card"; one confirmation for danger; **empty states and error blocks are part of the template** ("what to do next", "Retry").
-4. **An entry by task and role** — "Getting started" (one flow: system preparation → a stack for your role).
+4. **An entry by task:** "Getting started" (one first run: system preparation → tool sets). No roles — categories define the menu groups.
 5. **Honest names:** a page is named after what it does (no "rollback" if there is none).
 6. **A failure of one part does not break the page.**
 7. **Protection-weakening actions are visible and explained.**
@@ -44,7 +44,7 @@ Real duplicates and "one function in different corners":
 
 ```
 Overview                      health, "needs attention"
-Getting started               system preparation + stacks by role (one first-run flow)
+Getting started               system preparation + tool sets (one first-run flow)
 ─ Environment ─────────────
   Languages & versions        Python, Node (nvm), PHP (versions), Go, Rust, Java, Ruby, Dart, Flutter…: one layout
   Packages & services         Homebrew/apt: installed, unneeded, updates; services
@@ -75,13 +75,8 @@ Old → new: Dashboard→Overview · System setup+Profiles→Getting started · 
 - One confirmation window for a dangerous action, listing what is affected.
 - Built in vanilla JS (the helpers `roBanner`, `kvList`, `chipList` already exist), keeping the rule "`load()` separate from `render()`" — otherwise changing the language breaks. The sub-tabs of `docker.js` and `connect.js` move to one shared mechanism.
 
-## 5. "Getting started" and stacks by role
-**This is not just a new layout of "Profiles":** the `profiles.py` catalog must be extended first (stage U4a): a **Web** profile (there is none), PHP, Composer, Herd and Node in **Backend**; a language choice ("PHP/Laravel · Node · Python · Go"); remove duplicates (gh, lazygit, clt, cocoapods, fastlane); **one Node manager** (the owner's decision: nvm or Homebrew); a **"is it running"** check, not only "installed" (the DB service is running, the site is linked); item states: *install · manual · later (a large download) · needs administrator · needs consent* (the Xcode license, `sdkmanager --licenses`, Apple ID — a human does these by hand; the panel never enters a password).
-- **Backend:** a language of choice, DB/cache (MySQL, PostgreSQL, Redis) as services with a running check, Docker, git+gh, Cloudflared, curl/jq/httpie; for PHP — a site in "Sites & domains".
-- **Flutter / mobile:** Xcode + CLT + license (manual), simulators (a large download, "later"), CocoaPods, Flutter/FVM + Dart, Android SDK + Java, fastlane. Detection is by files: the panel **does not run `flutter --version`/`flutter doctor`** (they write to the SDK cache) — the project rule stays.
-- **Web:** Node + a version manager, pnpm/yarn, git, browsers for tests.
-- **AI operator:** an agent client, connecting the agent, approvals, Telegram.
-- Limits to show: only one profile installation runs at a time; cask apps trigger the administrator password window; the detector does not see GUI programs and manual items.
+## 5. "Getting started" and tool sets
+No roles. "Getting started" is two tabs: **system preparation** (Homebrew, git, the panel's Python) and **tool sets** (was "Install profiles") — a flat list of ready sets: Foundation, AI agents, Flutter, iOS, Backend (common), Backend: PHP/Laravel, Node.js, Python, Go, Web. A set has a "N of M ready" checklist, "Install" on an item and "Install everything missing" (confirmed with the list). The `profiles.py` catalog (stage U4a) is already rewritten: each tool is described once; DB services show "running/stopped"; item states: install · manual · later (a large download) · needs administrator · needs consent (the Android SDK license; the Xcode license and Apple ID are done by a human, the panel never enters a password). Flutter is detected by files: the panel **does not run `flutter --version`/`flutter doctor`**. Limits shown in the UI: one set installs at a time; cask apps may trigger the administrator password window; the detector does not see GUI programs and manual items.
 
 ## 6. Cross-cutting
 - **Attention center:** a block on "Overview" and an icon in the header: a plan waits for approval, updates exist, a service is down, low disk space, a token expires. The data comes from **a separate cacheable request** (the brew outdated list is slow and needs the network), not from the dashboard's two-second poll.
@@ -98,14 +93,14 @@ Each ends with: a run on a real system → before/after screenshots → independ
 | **U1** ✅ | The "who can approve" switch in "Approvals"; the "on this computer" agent wizard | done |
 | **U2** 🔶 | **Done:** the new menu in 5 groups, the composite pages "Getting started" and "History & copies" (a shared `makeComposite` mechanism), redirects of old addresses preserving parameters, independent and parallel loading on "AI access", shared error/empty/parallel-load blocks (`shell.js`), the smoke harness `tests/ui_smoke.py` (29 addresses, on the real HOME: 29/29). **Remaining:** one look of the header/status chips, moving `docker.js` to the shared sub-tab mechanism, applying the error/empty blocks on the other pages. The stage's original content: skeleton: the new menu and groups, the page template (header, chips, tabs, independent block loading, empty states, error blocks), redirects preserving parameters, moving `docker.js`/`connect.js` to one sub-tab mechanism, speeding up `connect.load` | 5–6 days |
 | **U3** | "Environment": "Languages & versions" in one layout (versions · default · packages · install/uninstall; Flutter/Dart once), "Packages & services" (tabs: installed · unneeded · updates · services · recommended), "Mobile development" (+ "install"), "Containers" | 6–8 days |
-| **U4a** ✅ | **Done:** the profile catalog rewritten (each tool described once, profiles reference it; the gh/lazygit/clt/CocoaPods/fastlane/Node/Python duplicates removed); added the **Web**, **Backend: PHP/Laravel** (PHP, Composer, Herd), **Node.js**, **Python** (uv, pipx) and **Go** profiles; profiles have a role and a variant; DB services show "running/stopped"; an item "needs consent" (the Android SDK licenses); one Node policy — Homebrew (`node@22`); the profiles page is grouped by role; 8 catalog tests. The stage's original content: extending the profile catalog (Web, Backend with PHP/Node, language choice, no duplicates, one Node manager, "is it running", item states) | 3–4 days |
-| **U4** | "Getting started": system preparation + stacks by role on the new catalog | 4–5 days |
+| **U4a** ✅ | **Done:** the profile catalog rewritten (each tool described once, profiles reference it; the gh/lazygit/clt/CocoaPods/fastlane/Node/Python duplicates removed); added the **Web**, **Backend: PHP/Laravel** (PHP, Composer, Herd), **Node.js**, **Python** (uv, pipx) and **Go** profiles; DB services show "running/stopped"; an item "needs consent" (the Android SDK licenses); one Node policy — Homebrew (`node@22`); 8 catalog tests. The stage's original content: extending the profile catalog (Web, Backend with PHP/Node, no duplicates, one Node manager, "is it running", item states) | 3–4 days |
+| **U4** | "Getting started": the "Preparation" and "Sets" tabs on the new catalog (one checklist, "install what is missing"); no roles | 2–3 days |
 | **U5** | "Projects" (+ runs and history) and "Sites & domains" (Herd + cloudflared + hosts) | 4 days |
 | **U6** | "Attention center" (a cacheable request) | 2 days |
 | **U7** | "Machines & runners"; "History & copies" (honest names; a separate task — "restore from a snapshot": reinstall from a Brewfile, only if the owner decides so) | 3 days |
 | **U8** | "AI access" as one whole section (one approval policy, guides per client), in the "AI agents" group | 2 days |
 | **U9** | Polish: responsiveness, accessibility, manuals and screenshots, checking the 10 scenarios with the owner | 3–4 days |
-Total ≈ 5–6 weeks. The first visible benefit — U2 + U4a/U4.
+Total ≈ 5–6 weeks. The first visible benefit — U2 + U3.
 
 **Old versions (part of U3).** Sources of the lists: Python — `uv python list --all-versions` (any patch version), Node — Homebrew versioned formulae (`node@N`), PHP — versioned formulae (`php@8.x`) and Herd, Flutter — FVM (`fvm releases`), Go/Rust/Java/Ruby — version managers or Homebrew versioned formulae. If the exact old version is not in Homebrew (it is unsupported), the panel honestly shows "not in Homebrew" and offers an additional mechanism (question 1).
 
@@ -133,13 +128,5 @@ Total ≈ 5–6 weeks. The first visible benefit — U2 + U4a/U4.
 - **ISPmanager, Cockpit, Coolify** (patterns): after login — an **overview**, then a permanent left menu (it neither hides nor appears — a "jumpy" panel annoys); ISPmanager's menu has levels "all / main / favorites / popular" and a search; Cockpit separated overviews from per-host settings; Coolify builds a hierarchy "server → project → environment → resource" and tabs on an object. Conclusion for us: overview + a stable menu + tabs on an object page; **favorites and popular** is a possible replacement for the postponed search and "interface profile".
 - **Versions:** `uv python list --all-versions` / `uv python install 3.12.3`, `nvm ls-remote`, `fvm releases` / `fvm install`, `mise ls-remote node` / `mise install node@20` — version managers have lists of "all" versions; Homebrew has only versioned formulae.
 
-## 12. "In development" and "I want this" (demand for future roles and features)
-Cards of future roles/features in "Getting started" are marked **"in development"** and have an **"I want this"** button. Options (the owner chooses; nothing is sent automatically):
-- **A. (recommended)** the button opens a ready issue/discussion in the public repository in the browser with the role's name; the person sends it themselves. Demand is seen by the number of 👍 — zero telemetry, no data leaves automatically.
-- **B.** a local "want" counter in the panel (for the owner), no sending.
-- **C.** sending an anonymous vote to your server/form — needs a separate decision (the address, exactly what is sent, user consent); not done by default.
-
 ## 10. Open questions
 1. **"Old versions" (Node etc.):** Homebrew gives only `node@N` of supported versions. For exact old versions (for example Node 14, Python 3.8.10, PHP 7.4, Flutter 2.x) I suggest adding **one extra mechanism — `mise`** (one version manager for Node/Python/Go/Ruby/Java and more) as an optional choice, keeping Homebrew as the main one. Agreed? (Python is already installed through `uv`, Flutter through FVM.)
-2. "I want this": option A (a button opens a GitHub issue), B (a local counter) or C (sending to a server)? Recommendation — A + B.
-3. Which future roles to show "in development" (I suggest: Data/ML, DevOps/Kubernetes, Game, Embedded/IoT, Desktop apps)?
