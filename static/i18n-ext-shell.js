@@ -288,3 +288,24 @@ Object.assign(I18N.en, {
 
 Object.assign(I18N.ru, {"nav.dashboard": "Обзор"});
 Object.assign(I18N.en, {"nav.dashboard": "Overview"});
+
+Object.assign(I18N.ru, {
+ "navg.langs": "Языки",
+ "navg.web": "Веб-серверы",
+ "navg.db": "Базы данных",
+ "navg.cache": "Кэш и очереди",
+ "navg.other": "Сервисы",
+ "navg.started": "{name}: запущен",
+ "navg.stopped": "{name}: остановлен",
+ "nav.packages": "Пакеты и приложения"
+});
+Object.assign(I18N.en, {
+ "navg.langs": "Languages",
+ "navg.web": "Web servers",
+ "navg.db": "Databases",
+ "navg.cache": "Cache & queues",
+ "navg.other": "Services",
+ "navg.started": "{name}: started",
+ "navg.stopped": "{name}: stopped",
+ "nav.packages": "Packages & apps"
+});

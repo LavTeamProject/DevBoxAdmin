@@ -266,7 +266,8 @@ async function route() {
   current?.leave?.();
   current = tab;
   currentNav = name;
-  document.querySelectorAll("#tabs a").forEach((a) => a.classList.toggle("active", a.hash === "#" + name));
+  document.querySelectorAll("#tabs a:not(#navTech a)").forEach((a) => a.classList.toggle("active", a.hash === "#" + name));
+  if (typeof navMarkActive === "function") navMarkActive();   // пункты языков и сервисов (navtree.js) подсвечивает само меню
   updatePageTitle();
   $("headline").textContent = "";
   document.body.classList.remove("nav-open");

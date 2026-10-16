@@ -152,3 +152,5 @@ Sources: [flyenv.com](https://flyenv.com), the [demos](https://flyenv.com/demos)
 
 ## 10. Open questions
 1. **"Old versions" (Node etc.):** Homebrew gives only `node@N` of supported versions. For exact old versions (for example Node 14, Python 3.8.10, PHP 7.4, Flutter 2.x) I suggest adding **one extra mechanism — `mise`** (one version manager for Node/Python/Go/Ruby/Java and more) as an optional choice, keeping Homebrew as the main one. Agreed? (Python is already installed through `uv`, Flutter through FVM.)
+
+**FlyEnv-style menu (owner's request).** Instead of one "Languages & versions" item — under "Environment" each language (with its active version) and each installed service (with a start switch) is its own item; groups: Languages · Web servers · Databases · Cache & queues · Services. "Packages & apps" stays as the full manager. Verified on the macOS VM: the switch starts and stops nginx. Not verified in a browser on the Linux VM.

@@ -51,6 +51,7 @@ import setup
 import snapshots
 import stats
 import attention
+import navtree
 import sites
 import svc
 import uihelpers
@@ -141,6 +142,7 @@ GET_ROUTES = {
     "/api/ports": ports.listening,
     "/api/herd": lambda q: herdphp.herd_info(),
     "/api/sites": sites.sites_info,
+    "/api/nav-services": navtree.nav_services,
     "/api/attention": attention.attention,
     "/api/herd/logs": herdphp.herd_logs,
     "/api/herd/suggest": herdphp.herd_suggest,

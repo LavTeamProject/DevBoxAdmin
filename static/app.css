@@ -391,3 +391,15 @@ label.opt input { margin-top: 3px; }
 .attn-card { margin-bottom: 14px; }
 .attn-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; }
 .attn-row a { flex: 1; min-width: 0; }
+
+/* Меню в стиле FlyEnv: пункты языков и сервисов, переключатель запуска */
+.nav-label-link { color: inherit; text-decoration: none; padding: 0; display: inline; background: none; }
+nav a.nav-label-link:hover { background: none; text-decoration: underline; }
+#tabs { overflow-y: auto; min-height: 0; }
+.nav-sw { margin-left: auto; width: 28px; height: 16px; border-radius: 9px; background: var(--gray, #8885); position: relative; flex: none; cursor: pointer; transition: background .15s; }
+.nav-sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: #fff; transition: transform .15s; }
+.nav-sw.on { background: var(--green, #2e9e5b); }
+.nav-sw.on::after { transform: translateX(12px); }
+.nav-sw.busy { opacity: .5; animation: navpulse 1s infinite; }
+@keyframes navpulse { 50% { opacity: .25; } }
+#navTech a { padding-top: 6px; padding-bottom: 6px; }

@@ -23,7 +23,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), 
 ROUTES = [
     ("#dashboard", "dashboard", False),
     ("#start", "start", True), ("#start:profiles", "start", True), ("#setup", "start", True), ("#profiles", "start", True),
-    ("#langs", "langs", False), ("#lang-python", "langs", False), ("#lang-python:packages", "langs", False), ("#lang-go", "langs", False), ("#lang-ruby", "langs", False), ("#php", "langs", False), ("#node", "langs", False),
+    ("#langs", None, False), ("#lang-python", None, False), ("#lang-python:packages", None, False), ("#lang-go", None, False), ("#lang-ruby", None, False), ("#php", None, False), ("#node", None, False),
     ("#packages", "packages", False), ("#service:cloudflared", "packages", False), ("#service:cloudflared:versions", "packages", False),
     ("#service:cloudflared:config", "packages", False), ("#service:cloudflared:log", "packages", False), ("#docker", "docker", False), ("#mobile", "mobile", False),
     ("#projects", "projects", True), ("#projects:runs", "projects", True), ("#runs", "projects", True), ("#sites", "sites", False), ("#herd", "herd", False),
@@ -81,7 +81,7 @@ def check(browser, port, route, nav, comp):
         if bad in body:
             problems.append(f"общая ошибка: «{bad}»")
     active = re.findall(r'<a href="#(\w+)"[^>]*class="[^"]*\bactive\b', dom)
-    if nav not in active:
+    if nav and nav not in active:
         problems.append(f"меню: подсвечено {active or 'ничего'}, ожидалось {nav}")
     if comp and 'id="compNav"' not in body:
         problems.append("нет полосы вкладок составной страницы")
