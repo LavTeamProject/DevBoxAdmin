@@ -29,127 +29,79 @@ _cache = {"t": 0.0, "data": None}
 # dan cara mendeteksinya. `name` = nama produk (tidak diterjemahkan),
 # `note` = kode catatan yang diterjemahkan UI (i18n), bukan prosa.
 
-PROFILES_MAC = [
-    {
-        "id": "base",
-        "icon": "homebrew",
-        "items": [
-            {"id": "clt", "name": "Xcode Command Line Tools", "pkg": "xcode-select --install", "type": "system",
-             "detect": ("clt",), "required": True, "note": "gui_only", "install": "setup"},
-            {"id": "homebrew", "name": "Homebrew", "pkg": "/bin/bash -c \"$(curl …)\"", "type": "system",
-             "detect": ("cmd", "brew", ("--version",)), "required": True, "install": "setup"},
-            {"id": "python", "name": "Python 3.12", "pkg": "python@3.12", "type": "formula",
-             "detect": ("cmd", "python3.12", ("--version",)), "required": False},
-            {"id": "git", "name": "Git", "pkg": "git", "type": "formula",
-             "detect": ("cmd", "git", ("--version",)), "required": True},
-            {"id": "gh", "name": "GitHub CLI", "pkg": "gh", "type": "formula",
-             "detect": ("cmd", "gh", ("--version",)), "required": False},
-            {"id": "fzf", "name": "fzf", "pkg": "fzf", "type": "formula",
-             "detect": ("cmd", "fzf", ("--version",)), "required": False},
-            {"id": "jq", "name": "jq", "pkg": "jq", "type": "formula",
-             "detect": ("cmd", "jq", ("--version",)), "required": False},
-            {"id": "yq", "name": "yq", "pkg": "yq", "type": "formula",
-             "detect": ("cmd", "yq", ("--version",)), "required": False},
-            {"id": "ripgrep", "name": "ripgrep", "pkg": "ripgrep", "type": "formula",
-             "detect": ("cmd", "rg", ("--version",)), "required": False},
-            {"id": "lazygit", "name": "lazygit", "pkg": "lazygit", "type": "formula",
-             "detect": ("cmd", "lazygit", ("--version",)), "required": False},
-            {"id": "lazydocker", "name": "lazydocker", "pkg": "lazydocker", "type": "formula",
-             "detect": ("cmd", "lazydocker", ("--version",)), "required": False},
-            {"id": "git-delta", "name": "git-delta", "pkg": "git-delta", "type": "formula",
-             "detect": ("cmd", "delta", ("--version",)), "required": False},
-        ],
-    },
-    {
-        "id": "ai",
-        "icon": "claude",
-        "items": [
-            {"id": "claude", "name": "Claude Code", "pkg": "claude-code", "type": "cask",
-             "detect": ("cmd", "claude", ("--version",)), "required": True},
-            {"id": "codex", "name": "Codex CLI", "pkg": "codex", "type": "cask",
-             "detect": ("cmd", "codex", ("--version",)), "required": False},
-            {"id": "opencode", "name": "OpenCode", "pkg": "opencode", "type": "formula",
-             "detect": ("cmd", "opencode", ("--version",)), "required": False},
-            {"id": "gemini", "name": "Gemini CLI", "pkg": "gemini-cli", "type": "formula",
-             "detect": ("cmd", "gemini", ("--version",)), "required": False},
-            {"id": "node", "name": "Node.js LTS", "pkg": "node@22", "type": "formula",
-             "detect": ("cmd", "node", ("-v",)), "required": True},
-            {"id": "bun", "name": "Bun", "pkg": "bun", "type": "formula",
-             "detect": ("cmd", "bun", ("--version",)), "required": False},
-            {"id": "gh", "name": "GitHub CLI", "pkg": "gh", "type": "formula",
-             "detect": ("cmd", "gh", ("--version",)), "required": False},
-            {"id": "lazygit", "name": "lazygit", "pkg": "lazygit", "type": "formula",
-             "detect": ("cmd", "lazygit", ("--version",)), "required": False},
-        ],
-    },
-    {
-        "id": "flutter",
-        "icon": "flutter",
-        "items": [
-            {"id": "flutter", "name": "Flutter SDK", "pkg": "flutter", "type": "cask",
-             "detect": ("flutter",), "required": True},
-            {"id": "fvm", "name": "FVM", "pkg": "fvm", "type": "formula",
-             "detect": ("cmd", "fvm", ("--version",)), "required": False},
-            {"id": "dart", "name": "Dart", "pkg": "dart-sdk", "type": "formula",
-             "detect": ("cmd", "dart", ("--version",)), "required": False},
-            {"id": "java", "name": "JDK (Android)", "pkg": "openjdk@21", "type": "formula",
-             "detect": ("jdk",), "required": True},
-            {"id": "android-sdk", "name": "Android SDK", "pkg": "android-commandlinetools", "type": "cask",
-             "detect": ("android_sdk",), "required": True, "note": "licenses"},
-            {"id": "android-studio", "name": "Android Studio", "pkg": "android-studio", "type": "cask",
-             "detect": ("app", "/Applications/Android Studio.app"), "required": False, "note": "gui_only", "install": "manual"},
-            {"id": "cocoapods", "name": "CocoaPods", "pkg": "cocoapods", "type": "formula",
-             "detect": ("cmd", "pod", ("--version",)), "required": False},
-            {"id": "fastlane", "name": "fastlane", "pkg": "fastlane", "type": "formula",
-             "detect": ("cmd", "fastlane", ("--version",)), "required": False},
-        ],
-    },
-    {
-        "id": "ios",
-        "icon": "apple",
-        "items": [
-            {"id": "xcode", "name": "Xcode", "pkg": "App Store / xcodes", "type": "system",
-             "detect": ("xcode",), "required": True, "note": "needs_apple_id_gui", "install": "manual"},
-            {"id": "clt", "name": "Xcode Command Line Tools", "pkg": "xcode-select --install", "type": "system",
-             "detect": ("clt",), "required": True, "note": "gui_only", "install": "setup"},
-            {"id": "xcodes", "name": "Xcodes", "pkg": "xcodes", "type": "formula",
-             "detect": ("cmd", "xcodes", ("--version",)), "required": False},
-            {"id": "runtimes", "name": "iOS Simulator runtime", "pkg": "xcodebuild -downloadPlatform iOS", "type": "system",
-             "detect": ("ios_runtimes",), "required": False, "note": "large_download", "install": "later"},
-            {"id": "cocoapods", "name": "CocoaPods", "pkg": "cocoapods", "type": "formula",
-             "detect": ("cmd", "pod", ("--version",)), "required": False},
-            {"id": "fastlane", "name": "fastlane", "pkg": "fastlane", "type": "formula",
-             "detect": ("cmd", "fastlane", ("--version",)), "required": False},
-            {"id": "swiftformat", "name": "SwiftFormat", "pkg": "swiftformat", "type": "formula",
-             "detect": ("cmd", "swiftformat", ("--version",)), "required": False},
-            {"id": "xcbeautify", "name": "xcbeautify", "pkg": "xcbeautify", "type": "formula",
-             "detect": ("cmd", "xcbeautify", ("--version",)), "required": False},
-        ],
-    },
-    {
-        "id": "backend",
-        "icon": "docker",
-        "items": [
-            {"id": "docker", "name": "Docker / OrbStack", "pkg": "orbstack", "type": "cask",
-             "detect": ("cmd", "docker", ("--version",)), "required": True, "note": "choose_runtime"},
-            {"id": "postgresql", "name": "PostgreSQL", "pkg": "postgresql@17", "type": "formula",
-             "detect": ("cmd", "psql", ("--version",)), "required": False},
-            {"id": "redis", "name": "Redis", "pkg": "redis", "type": "formula",
-             "detect": ("cmd", "redis-server", ("--version",)), "required": False},
-            {"id": "mysql", "name": "MySQL", "pkg": "mysql", "type": "formula",
-             "detect": ("cmd", "mysql", ("--version",)), "required": False},
-            {"id": "go", "name": "Go", "pkg": "go", "type": "formula",
-             "detect": ("cmd", "go", ("version",)), "required": False},
-            {"id": "rust", "name": "Rust", "pkg": "rustup", "type": "formula",
-             "detect": ("cmd", "rustc", ("--version",), "/opt/homebrew/opt/rustup/bin"), "required": False,
-             "after": ["rustup-default-stable"]},
-            {"id": "python", "name": "Python 3.12", "pkg": "python@3.12", "type": "formula",
-             "detect": ("cmd", "python3.12", ("--version",)), "required": False},
-        ],
-    },
-]
+# Каждый инструмент описан ОДИН раз (ITEMS); профили ссылаются на него по id и при необходимости меняют `required`.
+# Так gh, lazygit, clt, CocoaPods, fastlane, Node, Python и т. д. не дублируются между профилями, а проверка устанавливает/находит их одинаково.
+def _f(id_, name, pkg, cmd, args=("--version",), required=False, **kw):
+    return {"id": id_, "name": name, "pkg": pkg, "type": kw.pop("type", "formula"), "detect": ("cmd", cmd, tuple(args)) + ((kw.pop("path"),) if "path" in kw else ()),
+            "required": required, **kw}
 
-# ---------------------------------------------------------------- detektor
+
+ITEMS = {i["id"]: i for i in [
+    {"id": "clt", "name": "Xcode Command Line Tools", "pkg": "xcode-select --install", "type": "system", "detect": ("clt",), "required": True, "note": "gui_only", "install": "setup"},
+    {"id": "homebrew", "name": "Homebrew", "pkg": "/bin/bash -c \"$(curl …)\"", "type": "system", "detect": ("cmd", "brew", ("--version",)), "required": True, "install": "setup"},
+    _f("python", "Python 3.12", "python@3.12", "python3.12"),
+    _f("git", "Git", "git", "git", required=True),
+    _f("gh", "GitHub CLI", "gh", "gh"),
+    _f("fzf", "fzf", "fzf", "fzf"), _f("jq", "jq", "jq", "jq"), _f("yq", "yq", "yq", "yq"), _f("ripgrep", "ripgrep", "ripgrep", "rg"),
+    _f("lazygit", "lazygit", "lazygit", "lazygit"), _f("lazydocker", "lazydocker", "lazydocker", "lazydocker"), _f("git-delta", "git-delta", "git-delta", "delta"),
+    # ИИ
+    _f("claude", "Claude Code", "claude-code", "claude", type="cask"), _f("codex", "Codex CLI", "codex", "codex", type="cask"),
+    _f("opencode", "OpenCode", "opencode", "opencode"), _f("gemini", "Gemini CLI", "gemini-cli", "gemini"),
+    _f("node", "Node.js LTS", "node@22", "node", ("-v",)), _f("bun", "Bun", "bun", "bun"),
+    # мобильная
+    {"id": "flutter", "name": "Flutter SDK", "pkg": "flutter", "type": "cask", "detect": ("flutter",), "required": False},
+    _f("fvm", "FVM", "fvm", "fvm"), _f("dart", "Dart", "dart-sdk", "dart"),
+    {"id": "java", "name": "JDK (Android)", "pkg": "openjdk@21", "type": "formula", "detect": ("jdk",), "required": False},
+    {"id": "android-sdk", "name": "Android SDK", "pkg": "android-commandlinetools", "type": "cask", "detect": ("android_sdk",), "required": False, "note": "licenses"},
+    {"id": "android-studio", "name": "Android Studio", "pkg": "android-studio", "type": "cask", "detect": ("app", "/Applications/Android Studio.app"), "required": False,
+     "note": "gui_only", "install": "manual"},
+    _f("cocoapods", "CocoaPods", "cocoapods", "pod"), _f("fastlane", "fastlane", "fastlane", "fastlane"),
+    {"id": "xcode", "name": "Xcode", "pkg": "App Store / xcodes", "type": "system", "detect": ("xcode",), "required": True, "note": "needs_apple_id_gui", "install": "manual"},
+    _f("xcodes", "Xcodes", "xcodes", "xcodes"),
+    {"id": "runtimes", "name": "iOS Simulator runtime", "pkg": "xcodebuild -downloadPlatform iOS", "type": "system", "detect": ("ios_runtimes",), "required": False,
+     "note": "large_download", "install": "later"},
+    _f("swiftformat", "SwiftFormat", "swiftformat", "swiftformat"), _f("xcbeautify", "xcbeautify", "xcbeautify", "xcbeautify"),
+    # backend / web
+    _f("docker", "Docker / OrbStack", "orbstack", "docker", type="cask", note="choose_runtime"),
+    _f("postgresql", "PostgreSQL", "postgresql@17", "psql", service="postgresql@17"),
+    _f("redis", "Redis", "redis", "redis-server", service="redis"),
+    _f("mysql", "MySQL", "mysql", "mysql", service="mysql"),
+    _f("go", "Go", "go", "go", ("version",)),
+    _f("rust", "Rust", "rustup", "rustc", path="/opt/homebrew/opt/rustup/bin", after=["rustup-default-stable"]),
+    _f("php", "PHP", "php", "php", ("-v",)), _f("composer", "Composer", "composer", "composer"),
+    {"id": "herd", "name": "Laravel Herd", "pkg": "herd", "type": "cask", "detect": ("app", "/Applications/Herd.app"), "required": False},
+    _f("uv", "uv (Python)", "uv", "uv"), _f("pipx", "pipx", "pipx", "pipx"),
+    _f("pnpm", "pnpm", "pnpm", "pnpm"), _f("yarn", "Yarn", "yarn", "yarn"),
+    _f("cloudflared", "Cloudflared", "cloudflared", "cloudflared"), _f("mkcert", "mkcert (local HTTPS)", "mkcert", "mkcert", ("-version",)),
+    _f("httpie", "HTTPie", "httpie", "http"),
+    {"id": "chrome", "name": "Google Chrome", "pkg": "google-chrome", "type": "cask", "detect": ("app", "/Applications/Google Chrome.app"), "required": False},
+]}
+
+
+def _p(id_, icon, role, variant, refs):
+    """Профиль = ссылки на ITEMS. ref = "id" или ("id", required) — переопределяет обязательность только в этом профиле."""
+    items = []
+    for ref in refs:
+        iid, req = (ref, None) if isinstance(ref, str) else ref
+        item = dict(ITEMS[iid])
+        if req is not None:
+            item["required"] = req
+        items.append(item)
+    return {"id": id_, "icon": icon, "role": role, "variant": variant, "items": items}
+
+
+PROFILES_MAC = [
+    _p("base", "homebrew", "all", None, ["clt", "homebrew", "python", "git", "gh", "fzf", "jq", "yq", "ripgrep", "lazygit", "lazydocker", "git-delta"]),
+    _p("ai", "claude", "ai", None, [("claude", True), "codex", "opencode", "gemini", ("node", True), "bun", "gh", "lazygit"]),
+    _p("flutter", "flutter", "mobile", "flutter", [("flutter", True), "fvm", "dart", ("java", True), ("android-sdk", True), "android-studio", "cocoapods", "fastlane"]),
+    _p("ios", "apple", "mobile", "ios", ["xcode", "clt", "xcodes", "runtimes", "cocoapods", "fastlane", "swiftformat", "xcbeautify"]),
+    _p("backend", "docker", "backend", "common", [("docker", True), "postgresql", "redis", "mysql", "go", "rust", "python"]),
+    _p("backend-php", "php", "backend", "php", [("php", True), ("composer", True), "herd", "mysql", "redis", "docker", "node", "cloudflared"]),
+    _p("backend-node", "node", "backend", "node", [("node", True), "pnpm", "postgresql", "redis", "docker", "cloudflared"]),
+    _p("backend-python", "python", "backend", "python", [("python", True), "uv", "pipx", "postgresql", "redis", "docker"]),
+    _p("backend-go", "go", "backend", "go", [("go", True), "postgresql", "redis", "docker"]),
+    _p("web", "node", "web", None, [("node", True), "pnpm", "yarn", ("git", True), "gh", "chrome", "mkcert", "httpie"]),
+]
 
 def _lp(pid_item, name, pkg, required=False, detect_pkg=None):
     return {"id": pid_item, "name": name, "pkg": pkg, "type": "apt", "detect": ("dpkg", detect_pkg or pkg), "required": required}
@@ -176,6 +128,11 @@ PROFILES_LINUX = [
     {"id": "linux-containers", "icon": "docker", "items": [
         _lp("docker", "Docker Engine", "docker.io"), _lp("compose", "Docker Compose", "docker-compose-v2")]},
 ]
+LINUX_ROLES = {"linux-base": ("all", None), "linux-backend": ("backend", "common"), "linux-flutter": ("mobile", "flutter"), "linux-containers": ("backend", "containers")}
+for _pr in PROFILES_LINUX:
+    _pr["role"], _pr["variant"] = LINUX_ROLES.get(_pr["id"], ("all", None))
+PROFILES_LINUX.append({"id": "linux-web", "icon": "node", "role": "web", "variant": None,
+                       "items": [_lp("git", "Git", "git", True), _lp("curl", "curl", "curl"), _lp("nodejs", "Node.js (apt)", "nodejs", True), _lp("npm", "npm", "npm", True)]})
 PROFILES = PROFILES_MAC if sys.platform == "darwin" else PROFILES_LINUX
 PROFILE_IDS = {p["id"] for p in PROFILES}
 
@@ -379,6 +336,20 @@ def _install_kind(item):
     return "brew" if item["type"] in ("formula", "cask", "apt") else "manual"  # "brew" здесь = «ставится менеджером пакетов» (на Linux — apt)
 
 
+CONSENT_NOTES = {"licenses"}      # пункт требует согласия человека (лицензии Android SDK): панель само согласие не даёт
+
+
+def _services_running():
+    """{имя brew-сервиса: запущен ли} или None, если узнать нельзя (Linux, brew недоступен): «установлено» ≠ «работает»."""
+    if sys.platform != "darwin":
+        return None
+    try:
+        import brewsvc   # лениво: brewsvc → operations → profiles
+        return {s["name"]: bool(s.get("running")) for s in brewsvc.list_services()}
+    except Exception:  # noqa: BLE001 — признак «запущено» не должен ронять каталог
+        return None
+
+
 def catalog(q=None):
     """Katalog profil + status deteksi tiap alat (read-only).
     `?refresh=1` memaksa deteksi ulang, melewati cache."""
@@ -389,16 +360,20 @@ def catalog(q=None):
     with ThreadPoolExecutor(max_workers=8) as pool:
         results = dict(zip(specs.keys(), pool.map(_detect, specs.keys())))
     profiles = []
+    running = _services_running() if any(i.get("service") for p in PROFILES for i in p["items"]) else None
     for profile in PROFILES:
         items = []
         for item in profile["items"]:
             state = results.get(tuple(item["detect"])) or {"installed": False}
+            extra = {}
+            if item.get("service"):
+                extra = {"service": item["service"], "running": (running or {}).get(item["service"]) if state.get("installed") and running is not None else None}
             items.append({"id": item["id"], "name": item["name"], "pkg": item["pkg"], "type": item["type"],
-                          "required": bool(item.get("required")), "note": item.get("note"),
-                          "install": _install_kind(item), **state})
+                          "required": bool(item.get("required")), "note": item.get("note"), "consent": item.get("note") in CONSENT_NOTES,
+                          "install": _install_kind(item), **extra, **state})
         have = sum(1 for i in items if i["installed"])
         missing_required = [i["id"] for i in items if i["required"] and not i["installed"]]
-        profiles.append({"id": profile["id"], "icon": profile["icon"], "items": items,
+        profiles.append({"id": profile["id"], "icon": profile["icon"], "role": profile.get("role", "all"), "variant": profile.get("variant"), "items": items,
                          "have": have, "total": len(items), "ready": not missing_required,
                          "missing_required": missing_required})
     data = {"profiles": profiles, "readonly": False}

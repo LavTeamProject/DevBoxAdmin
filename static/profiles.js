@@ -28,6 +28,8 @@ tabs.profiles = {
         <span>${esc(i.name)}
           ${i.required ? `<span class="badge">${esc(t("common.required"))}</span>` : `<span class="badge gray">${esc(t("common.optional"))}</span>`}
           ${i.version ? `<span class="muted small">${esc(i.version)}</span>` : ""}
+          ${i.installed && i.service ? (i.running === true ? `<span class="badge green">${esc(t("profiles.running"))}</span>` : i.running === false ? `<span class="badge amber" title="${esc(t("profiles.stoppedTitle"))}">${esc(t("profiles.stopped"))}</span>` : "") : ""}
+          ${i.consent && !i.installed ? `<span class="badge amber" title="${esc(t("profiles.consentTitle"))}">${esc(t("profiles.consent"))}</span>` : ""}
           ${detail ? `<div class="note">${detail}</div>` : ""}
           ${i.path ? `<div class="pkg mono">${esc(i.path.replace(/^\/Users\/[^/]+/, "~"))}</div>` : ""}
         </span>
@@ -79,15 +81,18 @@ tabs.profiles = {
         <span class="spacer"></span>
         ${btn(t("profiles.rescan"), "profilesReload")}
       </div>
-      <div class="list">${d.profiles.map(card).join("")}</div>
+      ${ROLE_ORDER.filter((r) => d.profiles.some((p) => (p.role || "all") === r)).map((r) => `<h2>${esc(t("profiles.role." + r))}</h2>
+        <div class="list">${d.profiles.filter((p) => (p.role || "all") === r).map(card).join("")}</div>`).join("")}
       <p class="muted small">${t("profiles.outside")}</p>`;
   },
 };
 
+const ROLE_ORDER = ["all", "ai", "mobile", "backend", "web"];
+
 // Nama profil: produk, bukan prosa — dipetakan di sini supaya tetap satu tempat.
 const PROFILE_NAMES = {
-  ru: { base: "Фундамент", ai: "AI", flutter: "Flutter", ios: "iOS", backend: "Backend", "linux-base": "Фундамент", "linux-backend": "Backend", "linux-containers": "Контейнеры", "linux-flutter": "Flutter" },
-  en: { base: "Foundation", ai: "AI", flutter: "Flutter", ios: "iOS", backend: "Backend", "linux-base": "Foundation", "linux-backend": "Backend", "linux-containers": "Containers", "linux-flutter": "Flutter" },
+  ru: { base: "Фундамент", ai: "AI", flutter: "Flutter", ios: "iOS", backend: "Backend: общее", "backend-php": "Backend: PHP / Laravel", "backend-node": "Backend: Node.js", "backend-python": "Backend: Python", "backend-go": "Backend: Go", web: "Web (frontend)", "linux-web": "Web (frontend)", "linux-base": "Фундамент", "linux-backend": "Backend", "linux-containers": "Контейнеры", "linux-flutter": "Flutter" },
+  en: { base: "Foundation", ai: "AI", flutter: "Flutter", ios: "iOS", backend: "Backend: common", "backend-php": "Backend: PHP / Laravel", "backend-node": "Backend: Node.js", "backend-python": "Backend: Python", "backend-go": "Backend: Go", web: "Web (frontend)", "linux-web": "Web (frontend)", "linux-base": "Foundation", "linux-backend": "Backend", "linux-containers": "Containers", "linux-flutter": "Flutter" },
 };
 function profileName(p) {
   return (PROFILE_NAMES[LANG] || PROFILE_NAMES.ru)[p.id] || p.id;
