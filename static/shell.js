@@ -46,3 +46,23 @@ async function loadBlocks(spec) {
   const names = Object.keys(spec), res = await Promise.allSettled(names.map((n) => spec[n]));
   return Object.fromEntries(names.map((n, i) => [n, res[i].status === "fulfilled" ? { ok: true, value: res[i].value } : { ok: false, error: res[i].reason?.message || String(res[i].reason) }]));
 }
+
+// Единая страница объекта (Фаза 10): вкладки «Версии · Настройки · Журнал…» одинаково у языков и сервисов. items: [[sub, i18nКлюч], …]; base — адрес без вкладки.
+const objTabs = (base, items, active) => `<div class="row" style="gap:6px;margin-bottom:14px;flex-wrap:wrap">${items.map(([k, label]) =>
+  `<a class="pill-link ${k === active ? "active" : ""}" href="#${base}:${k}">${esc(t(label))}</a>`).join("")}</div>`;
+
+// Карточка «Версии из Homebrew» (последняя + версионные формулы; «Поставить» / «Удалить»). url отдаёт {supported, available:[{formula, version, installed, latest}]}.
+async function fillBrewVersions(box, url, noteKey = "lang.brewVersionsNote") {
+  if (!box) return;
+  box.innerHTML = `<h2>${esc(t("lang.brewVersions"))}</h2><div class="loading">${esc(t("shell.loading"))}</div>`;
+  let v;
+  try { v = await api(url); } catch (e) { box.innerHTML = `<h2>${esc(t("lang.brewVersions"))}</h2>${errBlock(e.message)}`; return; }
+  if (!v.supported) { box.innerHTML = ""; return; }
+  box.innerHTML = `<h2>${esc(t("lang.brewVersions"))}</h2><p class="muted small">${esc(t(noteKey))}</p>
+    ${v.available.length ? `<div class="table-wrap"><table><tr><th>${esc(t("lang.thFormula"))}</th><th>${esc(t("common.version"))}</th><th>${esc(t("pkg.thOrigin"))}</th><th></th></tr>
+    ${v.available.map((r) => `<tr><td><code>${esc(r.formula)}</code></td><td>${esc(r.latest ? t("lang.latest") : r.version)}</td>
+      <td>${r.installed ? `<span class="badge green">${esc(t("lang.installedBadge"))}</span>` : `<span class="muted small">${esc(t("lang.availableBadge"))}</span>`}</td>
+      <td><div class="actions">${r.installed ? btn(t("lang.uninstall"), "langBrewAct", { formula: r.formula, action: "uninstall", confirm: t("lang.confirmUninstall", { name: r.formula }) }, "danger")
+        : btn(t("profiles.install"), "langBrewAct", { formula: r.formula, action: "install" }, "go")}</div></td></tr>`).join("")}</table></div>`
+      : `<div class="empty">${esc(t("lang.noVersions"))}</div>`}`;
+}

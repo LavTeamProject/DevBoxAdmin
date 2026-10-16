@@ -723,6 +723,28 @@ def brew_versions(q):
     return {"key": key, "supported": True, "base": base, "available": rows}
 
 
+def _family(base):
+    """Формулы семейства: base и base@версия (локальные tap'ы, без сети) + какие уже стоят."""
+    names, have = _brew_formulae(), _brew_installed_names()
+    rx = re.compile(r"^" + re.escape(base) + r"@(\d+(?:\.\d+)*)$")
+    rows = [{"formula": n, "version": rx.match(n).group(1), "installed": n in have, "latest": False} for n in names if rx.match(n)]
+    rows.sort(key=lambda r: [int(x) for x in r["version"].split(".")], reverse=True)
+    if base in names:
+        rows.insert(0, {"formula": base, "version": "latest", "installed": base in have, "latest": True})
+    return rows
+
+
+def formula_versions(q):
+    """GET /api/apps/versions?name=postgresql@17 → версии той же формулы в Homebrew (для страницы сервиса: вкладка «Версии»)."""
+    name = (q or {}).get("name", "")
+    if not PKG_RE.match(name):
+        raise ApiError("Недопустимое имя пакета", code="srv.pkg_invalid")
+    base = name.split("@")[0]
+    if sys.platform != "darwin":
+        return {"key": base, "supported": False, "available": []}
+    return {"key": base, "supported": True, "base": base, "available": _family(base)}
+
+
 def brew_formula_of(install):
     """Имя формулы Homebrew для установки (opt/<формула>/…) или None."""
     path = install.get("real") or install.get("bin") or install.get("home") or ""

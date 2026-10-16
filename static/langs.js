@@ -120,6 +120,16 @@ function makeLangTab(key) {
               : key !== "python" && i.removable ? btn(t("lang.uninstall"), "langBrewAct", { formula: i.formula, action: "uninstall", confirm: t("lang.confirmUninstallVersion", { v: i.version || "", src: i.source }) }, "danger")
               : (key === "python" || i.formula) ? `<span class="muted small" title="${esc(sel === i.id ? t("lang.cantRemoveDefault") : ["Homebrew", "uv", "pyenv"].includes(i.source) ? t("lang.cantRemovePanel") : t("lang.cantRemoveSource", { src: i.source }))}">${esc(t("lang.cantRemove"))}</span>` : ""}</div>
         </div>`).join("")}</div>` : "";
+      const hasTabs = !!LANG_RENDER[key]?.body;            // у языков с пакетами/инструментами — вкладки «Версии» и «Пакеты и инструменты»
+      const sub = hasTabs && this.param === "packages" ? "packages" : "versions";
+      const versionsPart = `${(LANG_RENDER[key]?.warn?.(d)) || ""}
+        ${installs}
+        ${LANG_RENDER[key]?.versions?.(d) || ""}
+        ${BREW_VERSION_LANGS.includes(key) ? `<div id="verCard"></div>` : ""}
+        ${d.selectable ? `<p class="muted small">${key === "java"
+          ? t("lang.javaNote")
+          : t("lang.otherNote")}</p>` : ""}`;
+      const packagesPart = LANG_RENDER[key]?.body?.(d) || genericBody(d);
       view.innerHTML = `
         <p style="margin:0 0 12px"><a href="#langs">${esc(t("lang.backLink"))}</a></p>
         <div class="stat">
@@ -128,34 +138,17 @@ function makeLangTab(key) {
           ${d.selectable ? `<div class="card"><div>${esc(t("lang.defaultFromSA"))}</div><div>${selName ? `${esc(selName.version)} <span class="muted small">${esc(selName.source)}</span>` : esc(t("lang.notSet"))}</div>
             <div class="muted small">${esc(key === "java" ? t("lang.viaJavaHome") : sel ? t("lang.viaBin") : t("lang.followsPath"))}</div></div>` : ""}
         </div>
-        ${(LANG_RENDER[key]?.warn?.(d)) || ""}
-        ${installs}
-        ${BREW_VERSION_LANGS.includes(key) ? `<div id="verCard"></div>` : ""}
-        ${d.selectable ? `<p class="muted small">${key === "java"
-          ? t("lang.javaNote")
-          : t("lang.otherNote")}</p>` : ""}
-        ${LANG_RENDER[key]?.body?.(d) || genericBody(d)}`;
-      LANG_RENDER[key]?.bind?.(d);
-      if (BREW_VERSION_LANGS.includes(key)) fillVersions(key);
+        ${hasTabs ? objTabs(`lang-${key}`, [["versions", "lang.tab.versions"], ["packages", "lang.tab.packages"]], sub) : ""}
+        ${hasTabs ? (sub === "packages" ? packagesPart : versionsPart) : versionsPart + packagesPart}`;
+      if (!hasTabs || sub === "packages") LANG_RENDER[key]?.bind?.(d);
+      if (BREW_VERSION_LANGS.includes(key) && (!hasTabs || sub === "versions")) fillVersions(key);
     },
   };
 }
 
 // Версии из Homebrew (в том числе старые): список доступных версионных формул, «Поставить» / «Удалить». Homebrew держит только поддерживаемые версии.
 const BREW_VERSION_LANGS = ["node", "go", "java", "ruby"];
-async function fillVersions(key) {
-  const box = $("verCard");
-  if (!box) return;
-  box.innerHTML = `<h2>${esc(t("lang.brewVersions"))}</h2><div class="loading">${esc(t("shell.loading"))}</div>`;
-  let v;
-  try { v = await api(`/api/lang/versions?key=${key}`); } catch (e) { box.innerHTML = `<h2>${esc(t("lang.brewVersions"))}</h2>${errBlock(e.message)}`; return; }
-  if (!v.supported) { box.innerHTML = ""; return; }
-  box.innerHTML = `<h2>${esc(t("lang.brewVersions"))}</h2><p class="muted small">${esc(t("lang.brewVersionsNote"))}</p>
-    ${tableOf([t("lang.thFormula"), t("common.version"), t("pkg.thOrigin"), ""], v.available.map((r) => `<tr><td><code>${esc(r.formula)}</code></td>
-      <td>${esc(r.latest ? t("lang.latest") : r.version)}</td><td>${r.installed ? `<span class="badge green">${esc(t("lang.installedBadge"))}</span>` : `<span class="muted small">${esc(t("lang.availableBadge"))}</span>`}</td>
-      <td><div class="actions">${r.installed ? btn(t("lang.uninstall"), "langBrewAct", { formula: r.formula, action: "uninstall", confirm: t("lang.confirmUninstall", { name: r.formula }) }, "danger")
-        : btn(t("profiles.install"), "langBrewAct", { formula: r.formula, action: "install" }, "go")}</div></td></tr>`))}`;
-}
+const fillVersions = (key) => fillBrewVersions($("verCard"), `/api/lang/versions?key=${key}`);
 handlers.langBrewAct = (d) => runJob(api("/api/apps/action", { name: d.formula, type: "formula", action: d.action }), () => current.load());
 
 function genericBody(d) {
@@ -212,9 +205,8 @@ const LANG_RENDER = {
   python: {
     warn: (d) => (d.cert_fix || []).map((v) => `<div class="warn row">${t("lang.pyCert", { v: esc(v) })}
       <span class="spacer"></span>${btn(t("lang.fixNow"), "langAct", { key: "python", action: "cert-fix", version: v, job: 1 }, "primary")}</div>`).join(""),
+    versions: (d) => `${pyInstallCard(d)}${pyPathCard(d)}`,
     body: (d) => `
-      ${pyInstallCard(d)}
-      ${pyPathCard(d)}
       <h2 class="row">${esc(t("lang.pipxApps"))} <span class="spacer"></span>
         ${d.pipx?.length ? btn(t("lang.upgradeAll"), "langAct", { key: "python", action: "pipx-upgrade-all", job: 1 }) : ""}</h2>
       ${d.pipx == null ? `<div class="muted small">${t("lang.pipxMissing")}</div>` : `

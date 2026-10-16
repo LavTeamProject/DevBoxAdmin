@@ -69,6 +69,19 @@ class Versions(unittest.TestCase):
             self.assertEqual([i["id"] for i in runtimes.node_installs()], ["brew:node", "brew:node@22"])
             self.assertIn("brew:go@1.25", [i["id"] for i in runtimes.go_installs()])
 
+    def test_formula_family_for_service_pages(self):
+        names = ["postgresql@14", "postgresql@17", "postgresql@9", "postgresql-client", "mysql", "mysql@8.0", "mysql@8.4", "mysql-client"]
+        with mock.patch.object(runtimes, "_brew_formulae", return_value=names), mock.patch.object(runtimes, "_brew_installed_names", return_value={"mysql@8.4"}), \
+                mock.patch.object(runtimes.sys, "platform", "darwin"):
+            pg = runtimes.formula_versions({"name": "postgresql@17"})
+            my = runtimes.formula_versions({"name": "mysql"})
+        self.assertEqual([r["formula"] for r in pg["available"]], ["postgresql@17", "postgresql@14", "postgresql@9"])   # базовой формулы нет — «последней» нет
+        self.assertEqual([r["formula"] for r in my["available"]], ["mysql", "mysql@8.4", "mysql@8.0"])
+        self.assertEqual([r["formula"] for r in my["available"] if r["installed"]], ["mysql@8.4"])
+        for bad in ("", "a b", "x;rm", "../x"):
+            with self.assertRaises(core.ApiError):
+                runtimes.formula_versions({"name": bad})
+
     def test_node_can_only_select(self):
         with self.assertRaises(core.ApiError):
             runtimes.node_action({"action": "install"})

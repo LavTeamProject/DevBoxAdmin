@@ -89,17 +89,19 @@ tabs.packages = {
       installed: all.length, all: all.filter((a) => a.on_request).length,
       deps: all.filter((a) => a.type === "formula" && !a.on_request).length, removable: all.filter((a) => a.removable).length,
       cli: all.filter((a) => a.type === "formula" && a.on_request).length, app: all.filter((a) => a.type === "cask").length,
-      outdated: all.filter((a) => a.outdated).length, service: all.filter((a) => a.svc).length, recommend: 100,
+      outdated: all.filter((a) => a.outdated).length, service: all.filter((a) => a.svc).length, sets: "", ports: "", recommend: 100,
     };
     const running = this.services.filter((s) => s.running).length;
     $("headline").textContent = t("pkg.headline", { run: running, total: this.services.length, n: counts.all });
     $("svcCount").innerHTML = `<i class="nav-dot ${running ? "on" : ""}"></i>${running}/${this.services.length}`;
     const labels = { installed: t("pkg.fInstalled"), all: t("pkg.fManual"), deps: t("pkg.fDeps"), removable: t("pkg.fRemovable"), cli: "CLI", app: t("pkg.fApp"),
-                     outdated: t("pkg.fUpdates"), service: t("pkg.fService"), recommend: t("pkg.fRecommend") };
+                     outdated: t("pkg.fUpdates"), service: t("pkg.fService"), sets: t("pkg.fSets"), ports: t("pkg.fPorts"), recommend: t("pkg.fRecommend") };
     $("pkgFilter").innerHTML = Object.entries(labels).map(([k, l]) =>
       btn(`${l} <span class="muted">${counts[k]}</span>`, "pkgFilter", { f: k }, this.filter === k ? "active" : "")).join("");
     const match = (a) => !q || a.name.toLowerCase().includes(q) || (a.desc || "").toLowerCase().includes(q);
     if (this.filter === "recommend") return this.renderRecommend(match);
+    if (this.filter === "sets") return this.renderSets();
+    if (this.filter === "ports") return this.renderPorts(q);
     const pick = {
       installed: () => true, service: (a) => a.svc, all: (a) => a.on_request, deps: (a) => a.type === "formula" && !a.on_request, removable: (a) => a.removable,
       cli: (a) => a.type === "formula" && a.on_request, app: (a) => a.type === "cask", outdated: (a) => a.outdated,
@@ -170,6 +172,52 @@ tabs.packages = {
           ${btn(t("pkg.autoremove"), "pkgAutoremove", { confirm: t("pkg.confirmAutoremove", { n: rem.length, list: rem.map((a) => a.name).join(", ") }) }, "danger")}</div>`
           : `<div class="muted small" style="margin-top:8px">${esc(t("pkg.nothingToRemove"))}</div>`}</div>` : ""}`;
   },
+  // Наборы сервисов и группы запуска: «запустить всё» поверх brew services
+  async renderSets() {
+    $("pkgNote").textContent = "";
+    if (!this.sets) {
+      $("pkgList").innerHTML = `<div class="loading">${esc(t("shell.loading"))}</div>`;
+      try { this.sets = await api("/api/service-sets"); } catch (e) { $("pkgList").innerHTML = errBlock(e.message, "pkgSetsReload"); return; }
+      if (this.filter !== "sets") return;
+    }
+    if (!this.sets.supported) { $("pkgList").innerHTML = emptyBlock(t("sets.unsupported")); return; }
+    const dot = (m) => (!m.installed ? "" : m.running ? "on" : "mid");
+    const card = (s) => `<div class="card" style="margin-bottom:10px"><div class="row" style="gap:10px;flex-wrap:wrap"><div class="name">${esc(s.kind === "preset" ? t("sets.name." + s.id) : s.name)}
+        <span class="badge ${s.running ? "green" : ""}">${esc(t("sets.running", { n: s.running, total: s.total }))}</span></div><span class="spacer"></span>
+        ${btn(t("sets.start"), "setAct", { id: s.id, action: "start" }, "go")}${btn(t("sets.stop"), "setAct", { id: s.id, action: "stop", confirm: t("sets.confirmStop") })}
+        ${btn(t("sets.restart"), "setAct", { id: s.id, action: "restart" })}${s.installed < s.total ? btn(t("sets.install"), "setAct", { id: s.id, action: "install" }, "primary") : ""}
+        ${s.kind === "user" ? btn(t("sets.delete"), "setDelete", { id: s.id, confirm: t("sets.confirmDelete", { name: s.name }) }, "danger") : ""}</div>
+      ${s.kind === "preset" ? `<div class="muted small" style="margin:4px 0">${esc(t("sets.desc." + s.id))}</div>` : ""}
+      <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:6px">${s.members.map((m) => `<span class="badge" title="${esc(m.installed ? (m.running ? t("sets.stRunning") : t("sets.stStopped")) : t("sets.stMissing"))}"><span class="dot ${dot(m)}"></span> ${esc(m.name)}${m.installed ? "" : ` · ${esc(t("sets.stMissing"))}`}</span>`).join("")}</div></div>`;
+    const inst = this.services.map((x) => x.name);
+    $("pkgList").innerHTML = `<p class="muted small">${esc(t("sets.intro"))}</p>${this.sets.sets.map(card).join("")}
+      <h2>${esc(t("sets.new"))}</h2>
+      <form class="card" id="setNew"><div class="row" style="gap:8px;flex-wrap:wrap"><input type="text" name="name" maxlength="40" placeholder="${esc(t("sets.namePh"))}" style="min-width:220px">
+        <button class="primary">${esc(t("sets.create"))}</button></div>
+        <div class="row" style="gap:12px;flex-wrap:wrap;margin-top:8px">${inst.length ? inst.map((n) => `<label class="small"><input type="checkbox" name="m" value="${esc(n)}"> ${esc(n)}</label>`).join("") : `<span class="muted small">${esc(t("sets.noServices"))}</span>`}</div></form>`;
+    $("setNew").onsubmit = async (e) => {
+      e.preventDefault();
+      const f = new FormData(e.target);
+      try { await api("/api/service-sets/create", { name: String(f.get("name") || "").trim(), members: f.getAll("m") }); toast(t("rmt.saved")); this.sets = null; this.render(); }
+      catch (err) { toast(err.message, true); }
+    };
+  },
+  // Порты: кто слушает какой TCP-порт (только чтение)
+  async renderPorts(q) {
+    $("pkgNote").textContent = "";
+    if (!this.ports) {
+      $("pkgList").innerHTML = `<div class="loading">${esc(t("shell.loading"))}</div>`;
+      try { this.ports = await api("/api/ports"); } catch (e) { $("pkgList").innerHTML = errBlock(e.message, "pkgPortsReload"); return; }
+      if (this.filter !== "ports") return;
+    }
+    const rows = this.ports.ports.filter((r) => !q || String(r.port).includes(q) || r.cmd.toLowerCase().includes(q) || (r.label || "").toLowerCase().includes(q));
+    $("pkgList").innerHTML = `<div class="row" style="margin-bottom:8px"><p class="muted small" style="margin:0">${esc(t("ports.intro"))}</p><span class="spacer"></span>${btn(t("svc.logRefresh"), "pkgPortsReload")}</div>
+      ${rows.length ? `<div class="table-wrap"><table><tr><th>${esc(t("ports.port"))}</th><th>${esc(t("ports.process"))}</th><th>PID</th><th>${esc(t("ports.address"))}</th><th>${esc(t("ports.access"))}</th><th>${esc(t("ports.note"))}</th></tr>
+        ${rows.map((r) => `<tr><td><b>${esc(r.port)}</b></td><td>${esc(r.cmd)} <span class="muted small">${esc(r.user)}</span></td><td class="small">${esc(r.pid ?? "")}</td><td class="small"><code>${esc(r.addr)}</code></td>
+          <td>${r.local_only ? `<span class="badge green">${esc(t("ports.local"))}</span>` : `<span class="badge amber" title="${esc(t("ports.networkTitle"))}">${esc(t("ports.network"))}</span>`}</td>
+          <td class="small muted">${esc(r.label || "")}</td></tr>`).join("")}</table></div>`
+        : emptyBlock(t("ports.none"))}`;
+  },
   // 100 paket development yang direkomendasikan, dikelompokkan per kategori
   renderRecommend(match) {
     $("pkgNote").textContent = "";
@@ -226,6 +274,10 @@ handlers.recInstall = (d) => runJob(api("/api/apps/action", { name: d.name, type
 handlers.pkgCloseSearch = () => { $("pkgResults").innerHTML = ""; };
 handlers.pkg = (d) => runJob(api("/api/apps/action", { name: d.name, type: d.type, action: d.action }), reloadPackages);
 handlers.pkgReload = () => tabs.packages.load();
+handlers.pkgSetsReload = () => { tabs.packages.sets = null; tabs.packages.render(); };
+handlers.pkgPortsReload = () => { tabs.packages.ports = null; tabs.packages.render(); };
+handlers.setAct = (d) => runJob(api("/api/service-sets/action", { id: d.id, action: d.action }), () => { tabs.packages.sets = null; tabs.packages.load(); });
+handlers.setDelete = async (d) => { await api("/api/service-sets/delete", { id: d.id }); tabs.packages.sets = null; tabs.packages.render(); };
 handlers.pkgAutoremove = () => runJob(api("/api/apps/action", { action: "autoremove" }), reloadPackages);
 handlers.pkgCleanup = () => runJob(api("/api/apps/action", { action: "cleanup" }), reloadPackages);
 document.addEventListener("change", (ev) => { if (ev.target.id === "pkgSort") { tabs.packages.sort = ev.target.value; tabs.packages.render(); } });
@@ -248,17 +300,27 @@ handlers.svcLog = async (d) => {
 };
 
 // ------------------------------------------------------------ detail service
+const SERVICE_TABS = [["overview", "svc.tab.overview"], ["versions", "svc.tab.versions"], ["config", "svc.tab.config"], ["log", "svc.tab.log"]];
 tabs.service = {
   nav: "packages",
   file: null,
+  name: "",
+  sub: "overview",
+  d: null,
+  cf: null,
+  // адрес: #service:<имя>[:вкладка]; вкладки одинаковы у всех объектов — «Обзор · Версии · Настройки · Журнал»
   async load() {
-    const name = this.param;
-    let d, cf = null;
+    const [name, sub] = String(this.param).split(":");
+    this.name = name;
+    this.sub = SERVICE_TABS.some((x) => x[0] === sub) ? sub : "overview";
     try {
-      d = await api(`/api/services/detail?name=${encodeURIComponent(name)}`);
-      if (name === "cloudflared") cf = await api("/api/cloudflared").catch((e) => ({ error: e.message }));
+      this.d = await api(`/api/services/detail?name=${encodeURIComponent(name)}`);
+      this.cf = name === "cloudflared" ? await api("/api/cloudflared").catch((e) => ({ error: e.message })) : null;
     } catch (e) { return failView(e); }
-    const s = d.service, f = d.formula;
+    this.render();
+  },
+  render() {
+    const d = this.d, name = this.name, s = d.service, f = d.formula, cf = this.cf;
     $("pageTitle").innerHTML = `${logoSvg(logoFor(name) || "", "title-logo")}${esc(name)}`;
     $("headline").textContent = f.version ? t("pkg.version", { v: f.version }) : "";
     if (!d.config_files.includes(this.file)) this.file = d.config_files[0] || null;
@@ -272,7 +334,7 @@ tabs.service = {
       [t("pkg.command"), `<code>${esc(s.command || "-")}</code>`],
       [t("pkg.plistFile"), `<code>${esc(s.file || "-")}</code>`],
     ].filter(Boolean);
-    view.innerHTML = `
+    const head = `
       <p style="margin:0 0 12px"><a href="#packages">${esc(t("pkg.backToPkgs"))}</a></p>
       <div class="card item" style="margin-bottom:14px">
         <div class="row" style="flex-wrap:nowrap;gap:12px">${pkgIcon(name, "formula")}
@@ -281,29 +343,57 @@ tabs.service = {
         <div class="actions">${svcActions(s, false)}
           ${btn(t("pkg.uninstall"), "svcUninstall", { name, confirm: t("pkg.confirmUninstallSvc", { name }) + (d.data_dir ? "\n\n" + t("pkg.dataKept", { dir: d.data_dir }) : "") }, "danger")}</div>
       </div>
-      ${cf ? cfPanel(cf) : ""}
-      <div class="grid two">
-        <div class="card"><h3>${esc(t("pkg.info"))}</h3><dl class="kv">${kv.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl></div>
-        <div class="card"><h3>${esc(t("pkg.brewNotes"))}</h3>
-          ${f.caveats ? `<pre style="padding:0;max-height:240px">${esc(f.caveats)}</pre>` : `<div class="muted small">${esc(t("pkg.noNotes"))}</div>`}</div>
-      </div>
-      <h2 class="row">${esc(t("pkg.config"))} <span class="spacer"></span><span class="muted small">${t("pkg.autoBackup", { dir: esc(d.backup_dir) })}</span></h2>
-      ${d.config_files.length ? `
-        <div class="row" style="margin-bottom:10px">
-          <div class="pills">${d.config_files.map((p) => btn(esc(p.split("/").slice(-2).join("/")), "cfgFile", { path: p }, p === this.file ? "active" : "", `title="${esc(p)}"`)).join("")}</div>
-          <span class="spacer"></span>
-          ${d.can_validate ? btn(t("pkg.validate"), "cfgValidate") : ""}
-          ${btn(t("pkg.save"), "cfgSave")}
-          ${btn(t("pkg.saveRestart"), "cfgSave", { restart: 1 }, "primary")}
-        </div>
-        <textarea class="editor" id="cfgEd" spellcheck="false" style="min-height:48vh"></textarea>
-        <pre class="card" id="cfgOut" style="display:none;margin-top:10px"></pre>`
-      : `<div class="empty">${esc(t("pkg.noConfig"))}</div>`}`;
-    if (this.file) await this.loadFile();
+      ${objTabs(`service:${encodeURIComponent(name)}`, SERVICE_TABS, this.sub)}`;
+    const body = {
+      overview: () => `<div id="portWarn"></div>${cf ? cfPanel(cf) : ""}
+        <div class="grid two">
+          <div class="card"><h3>${esc(t("pkg.info"))}</h3><dl class="kv">${kv.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl></div>
+          <div class="card"><h3>${esc(t("pkg.brewNotes"))}</h3>
+            ${f.caveats ? `<pre style="padding:0;max-height:240px">${esc(f.caveats)}</pre>` : `<div class="muted small">${esc(t("pkg.noNotes"))}</div>`}</div>
+        </div>`,
+      versions: () => `<div id="verCard"></div>`,
+      config: () => `<h2 class="row">${esc(t("pkg.config"))} <span class="spacer"></span><span class="muted small">${t("pkg.autoBackup", { dir: esc(d.backup_dir) })}</span></h2>
+        ${d.config_files.length ? `
+          <div class="row" style="margin-bottom:10px">
+            <div class="pills">${d.config_files.map((p) => btn(esc(p.split("/").slice(-2).join("/")), "cfgFile", { path: p }, p === this.file ? "active" : "", `title="${esc(p)}"`)).join("")}</div>
+            <span class="spacer"></span>
+            ${d.can_validate ? btn(t("pkg.validate"), "cfgValidate") : ""}
+            ${btn(t("pkg.save"), "cfgSave")}
+            ${btn(t("pkg.saveRestart"), "cfgSave", { restart: 1 }, "primary")}
+          </div>
+          <textarea class="editor" id="cfgEd" spellcheck="false" style="min-height:48vh"></textarea>
+          <pre class="card" id="cfgOut" style="display:none;margin-top:10px"></pre>`
+        : `<div class="empty">${esc(t("pkg.noConfig"))}</div>`}`,
+      log: () => `<div class="row" style="margin-bottom:8px"><h2 style="margin:0">${esc(t("svc.tab.log"))}</h2><span class="spacer"></span>${btn(t("svc.logRefresh"), "svcLogRefresh")}</div>
+        <pre class="card" id="svcLogView" style="max-height:60vh;overflow:auto;white-space:pre-wrap">${esc(t("shell.loading"))}</pre>`,
+    }[this.sub]();
+    view.innerHTML = head + body;
+    if (this.sub === "config" && this.file) this.loadFile();
+    if (this.sub === "overview" && !s.running && d.ports.length) this.portWarn(d.ports);
+    if (this.sub === "versions") fillBrewVersions($("verCard"), `/api/apps/versions?name=${encodeURIComponent(name)}`, "svc.versionsNote");
+    if (this.sub === "log") this.loadLog();
+  },
+  // сервис остановлен, а его порт занят другим процессом — частая причина «не запускается»
+  async portWarn(ports) {
+    try {
+      const busy = (await api("/api/ports")).ports.filter((r) => ports.includes(r.port));
+      if (busy.length && $("portWarn")) $("portWarn").innerHTML = `<div class="warn small" style="margin-bottom:10px">${esc(t("ports.busy", { list: busy.map((r) => `${r.port} (${r.cmd}, PID ${r.pid})`).join(", ") }))}</div>`;
+    } catch { /* порты — подсказка, не обязательная часть страницы */ }
+  },
+  async loadLog() {
+    const box = $("svcLogView");
+    try {
+      const r = await api(`/api/logs?name=${encodeURIComponent(this.name)}`);
+      let txt = "";
+      if (r.log != null) txt += `# ${r.log_path}\n${r.log || t("pkg.empty")}\n`;
+      if (r.error_log != null) txt += `\n# ${r.error_log_path}\n${r.error_log || t("pkg.empty")}`;
+      if (box) { box.textContent = txt || t("svc.logEmpty"); box.scrollTop = box.scrollHeight; }
+    } catch (e) { if (box) box.textContent = e.message; }
   },
   async loadFile() {
-    const r = await api(`/api/services/config?name=${encodeURIComponent(this.param)}&path=${encodeURIComponent(this.file)}`);
+    const r = await api(`/api/services/config?name=${encodeURIComponent(this.name)}&path=${encodeURIComponent(this.file)}`);
     const ed = $("cfgEd");
+    if (!ed) return;
     ed.value = r.content;
     ed.onkeydown = (e) => {
       if (e.key === "Tab") { e.preventDefault(); ed.setRangeText("  ", ed.selectionStart, ed.selectionEnd, "end"); }
@@ -311,6 +401,7 @@ tabs.service = {
     };
   },
 };
+handlers.svcLogRefresh = () => tabs.service.loadLog();
 
 function showCfgOut(text, ok = true) {
   const o = $("cfgOut");
@@ -324,11 +415,11 @@ handlers.cfgFile = async (d, el) => {
   await tabs.service.loadFile();
 };
 handlers.cfgValidate = async () => {
-  const r = await api("/api/services/validate", { name: tabs.service.param, path: tabs.service.file });
+  const r = await api("/api/services/validate", { name: tabs.service.name, path: tabs.service.file });
   showCfgOut((r.ok ? "✅ " : "❌ ") + r.output, r.ok);
 };
 handlers.cfgSave = async (d) => {
-  const body = { name: tabs.service.param, path: tabs.service.file, content: $("cfgEd").value, restart: !!d.restart };
+  const body = { name: tabs.service.name, path: tabs.service.file, content: $("cfgEd").value, restart: !!d.restart };
   let r;
   try {
     r = await api("/api/services/config", body);

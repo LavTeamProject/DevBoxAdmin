@@ -126,3 +126,7 @@ Format: **what** — why it was not verified — **how you can help**.
 ### Phase 10, U3 (versions from Homebrew)
 - Verified: 7 tests (the list of versioned formulae and their order, similar names, the formula name from a path, "removable", Node/Go); the Node page on real data (Node 26 from the `node` formula; `node@24/22/20/18` available); the Go/Java/Ruby version lists on real data.
 - Not verified: **installing and removing** versions (`brew install/uninstall node@22`, etc.) and choosing the default Node version were not run on the working Mac; former nvm users: nvm versions are shown in the installs list but not removed from the panel; the PHP (Herd) page did not change.
+
+### Phase 10: FlyEnv ideas (object page, service sets, ports)
+- Verified: 6 tests of sets/groups/ports (lsof parsing, set statuses, skipping not-installed services, `install` steps, input validation and limits) + a formula-family test; the service page (4 tabs) and language pages (2 tabs), the "Sets" and "Ports" tabs on real Mac data; the 12 new catalog cards exist in Homebrew (formulae and casks checked against local data).
+- Not verified: **starting/stopping sets** (`brew services start/stop`) and installing the missing were not run on the working Mac; the service page on Linux (systemd): the "Versions" tab is empty there, "Sets" are off; ports on Linux through `lsof` see only your own processes without root.

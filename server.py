@@ -20,6 +20,8 @@ from urllib.parse import parse_qs, urlparse
 import agent_gateway
 import agent_socket
 import operators
+import ports
+import service_sets
 import remote_api
 import telegram_bot
 import agent_tasks
@@ -131,6 +133,9 @@ GET_ROUTES = {
     "/api/runtimes": uihelpers.nav_info,
     "/api/lang": runtimes.lang_info,
     "/api/lang/versions": runtimes.brew_versions,
+    "/api/apps/versions": runtimes.formula_versions,
+    "/api/service-sets": service_sets.list_sets,
+    "/api/ports": ports.listening,
     "/api/herd": lambda q: herdphp.herd_info(),
     "/api/herd/logs": herdphp.herd_logs,
     "/api/herd/suggest": herdphp.herd_suggest,
@@ -181,6 +186,9 @@ POST_ROUTES = {
     "/api/agent-gateway/rotate": agent_gateway.rotate,
     "/api/agent-gateway/settings": remote_api.agent_set,
     "/api/remote/settings": remote_api.set_settings,
+    "/api/service-sets/action": service_sets.run_action,
+    "/api/service-sets/create": service_sets.create_group,
+    "/api/service-sets/delete": service_sets.delete_group,
     "/api/remote/agent-token": remote_api.issue_agent_token,
     "/api/operators/create": remote_api.op_create,
     "/api/operators/rotate": remote_api.op_rotate,
