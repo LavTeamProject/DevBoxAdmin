@@ -20,6 +20,12 @@ Object.assign(I18N.ru, {
   "profiles.desc.backend-go": "Backend на Go: Go, PostgreSQL, Redis и Docker.",
   "profiles.desc.web": "Web (frontend): Node.js LTS, pnpm, Yarn, Git, GitHub CLI, Google Chrome, mkcert (локальный HTTPS), HTTPie.",
   "profiles.desc.linux-web": "Web (frontend): Git, curl, Node.js и npm (пакеты apt).",
+  "lang.brewVersions": "Версии из Homebrew",
+  "lang.brewVersionsNote": "Последняя версия и версионные формулы (поддерживаемые Homebrew). Более старых версий в Homebrew нет.",
+  "lang.thFormula": "Формула",
+  "lang.latest": "последняя",
+  "lang.installedBadge": "установлена",
+  "lang.availableBadge": "доступна",
 });
 Object.assign(I18N.en, {
   "nav.start": "Getting started",
@@ -42,4 +48,10 @@ Object.assign(I18N.en, {
   "profiles.desc.backend-go": "A Go backend: Go, PostgreSQL, Redis and Docker.",
   "profiles.desc.web": "Web (frontend): Node.js LTS, pnpm, Yarn, Git, GitHub CLI, Google Chrome, mkcert (local HTTPS), HTTPie.",
   "profiles.desc.linux-web": "Web (frontend): Git, curl, Node.js and npm (apt packages).",
+  "lang.brewVersions": "Versions from Homebrew",
+  "lang.brewVersionsNote": "The latest version and the versioned formulae (the ones Homebrew supports). Older versions are not in Homebrew.",
+  "lang.thFormula": "Formula",
+  "lang.latest": "latest",
+  "lang.installedBadge": "installed",
+  "lang.availableBadge": "available",
 });

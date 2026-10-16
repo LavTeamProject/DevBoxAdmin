@@ -48,7 +48,7 @@ LANGS = [
     ("lua", "Lua", "lua", ["-v"]),
     ("perl", "Perl", "perl", ["-e", "print $^V"]),
 ]
-MANAGED = {"python", "go", "rust", "java", "ruby"}
+MANAGED = {"python", "go", "rust", "java", "ruby", "node"}
 # formula/cask Homebrew untuk bahasa yang belum terinstall (Swift butuh Xcode, jadi tidak ada di sini)
 INSTALL = {"php": ("php", "formula"), "node": ("node", "formula"), "python": ("python", "formula"), "go": ("go", "formula"),
            "rust": ("rustup", "formula"), "java": ("openjdk", "formula"), "ruby": ("ruby", "formula"),
@@ -440,6 +440,7 @@ def python_action(body):
 def go_installs():
     items = [{"id": "godev", "source": "go.dev installer", "bin": "/usr/local/go/bin/go"},
              {"id": "brew", "source": "Homebrew", "bin": f"{BREW_PREFIX}/opt/go/bin/go"}]
+    items += [{"id": f"brew:{os.path.basename(d)}", "source": "Homebrew", "bin": f"{d}/bin/go"} for d in sorted(glob.glob(f"{BREW_PREFIX}/opt/go@*"))]
     items += [{"id": f"sdk:{os.path.basename(d)}", "source": "golang.org/dl", "bin": f"{d}/bin/go"}
               for d in sorted(glob.glob(f"{HOME}/sdk/go*"))]
     items = [i for i in items if os.path.exists(i["bin"])]
@@ -681,6 +682,79 @@ def ruby_action(body):
                         lambda t: link_bin(os.path.dirname(t["bin"]), ("ruby", "gem", "irb", "bundle", "rake", "erb")))
 
 
+# ---------------------------------------------------------------- версии из Homebrew (в том числе старые) и Node
+
+# язык → (базовая формула = последняя версия, шаблон версионной формулы). Homebrew держит только поддерживаемые версии:
+# для снятых с поддержки (Node 16, PHP 7.4…) нужен другой механизм — панель честно пишет, что их в Homebrew нет.
+BREW_VERSIONED = {"node": ("node", r"node@(\d+)"), "go": ("go", r"go@(\d+\.\d+)"), "ruby": ("ruby", r"ruby@(\d+\.\d+)"),
+                  "java": ("openjdk", r"openjdk@(\d+)"), "python": ("python", r"python@(\d+\.\d+)"), "php": ("php", r"php@(\d+\.\d+)")}
+_formulae = {"t": 0.0, "names": None}
+
+
+def _brew_formulae():
+    """Имена всех формул из локальных tap'ов (без сети, ~0,1 с); кэш на 10 минут."""
+    if _formulae["names"] is None or time.time() - _formulae["t"] > 600:
+        code, out, _ = run([BREW, "formulae"], timeout=60, env=dict(ENV, HOMEBREW_NO_AUTO_UPDATE="1"))
+        _formulae.update(t=time.time(), names=[l.strip() for l in out.splitlines() if l.strip() and not l.startswith("Warning")] if code == 0 else [])
+    return _formulae["names"]
+
+
+def _brew_installed_names():
+    try:
+        return set(os.listdir(os.path.join(BREW_PREFIX, "Cellar")))
+    except OSError:
+        return set()
+
+
+def brew_versions(q):
+    """GET /api/lang/versions?key=node → доступные версии языка в Homebrew (последняя + версионные формулы) и какие уже стоят."""
+    key = (q or {}).get("key", "")
+    if key not in BREW_VERSIONED:
+        raise ApiError("для этого языка версии из Homebrew недоступны", HTTPStatus.NOT_FOUND, code="lang.no_versions")
+    if sys.platform != "darwin":
+        return {"key": key, "supported": False, "available": []}
+    base, pat = BREW_VERSIONED[key]
+    names, have = _brew_formulae(), _brew_installed_names()
+    rx = re.compile(f"^{pat}$")
+    rows = [{"formula": n, "version": rx.match(n).group(1), "installed": n in have, "latest": False} for n in names if rx.match(n)]
+    rows.sort(key=lambda r: [int(x) for x in r["version"].split(".")], reverse=True)
+    if base in names:
+        rows.insert(0, {"formula": base, "version": "latest", "installed": base in have, "latest": True})
+    return {"key": key, "supported": True, "base": base, "available": rows}
+
+
+def brew_formula_of(install):
+    """Имя формулы Homebrew для установки (opt/<формула>/…) или None."""
+    path = install.get("real") or install.get("bin") or install.get("home") or ""
+    m = re.search(re.escape(BREW_PREFIX) + r"/(?:opt|Cellar)/([^/]+)/", path) or re.search(re.escape(BREW_PREFIX) + r"/opt/([^/]+)/", install.get("bin") or "")
+    return m.group(1) if m and NAME_RE.match(m.group(1)) else None
+
+
+def node_installs():
+    items = [{"id": f"brew:{os.path.basename(d)}", "source": "Homebrew", "bin": f"{d}/bin/node"} for d in sorted(glob.glob(f"{BREW_PREFIX}/opt/node*"))]
+    items += [{"id": f"nvm:{os.path.basename(d)}", "source": "nvm", "bin": f"{d}/bin/node"} for d in sorted(glob.glob(f"{HOME}/.nvm/versions/node/*"))]
+    items = [i for i in items if os.path.exists(i["bin"])]
+    for i in items:
+        i["real"] = os.path.realpath(i["bin"])
+        i["version"] = version_of(i["bin"], ["-v"])
+    return uniq(items)
+
+
+def node_info(q):
+    installs = node_installs()
+    path, _ = active("node")
+    return {"key": "node", "name": "Node.js", "installs": installs, "selectable": True,
+            "selected": load_state().get("node_default") if os.path.islink(os.path.join(SHIM_DIR, "node")) else None,
+            "active": {"path": path, "version": version_of(path, ["-v"]) if path else None, "source": source_of(path)},
+            "formula": "node"}
+
+
+def node_action(body):
+    if body.get("action") != "select":
+        raise ApiError("недопустимое действие", code="lang.action_invalid")
+    return select_shims("node", node_installs(), body.get("id"), lambda t: link_bin(os.path.dirname(t["bin"]), ("node", "npm", "npx", "corepack")))
+
+
 # ---------------------------------------------------------------- generik & routing
 
 def generic_info(key):
@@ -692,13 +766,24 @@ def generic_info(key):
             "formula": lang["formula"]}
 
 
-INFO = {"python": python_info, "go": go_info, "rust": rust_info, "java": java_info, "ruby": ruby_info}
-ACTIONS = {"python": python_action, "go": go_action, "rust": rust_action, "java": java_action, "ruby": ruby_action}
+INFO = {"python": python_info, "go": go_info, "rust": rust_info, "java": java_info, "ruby": ruby_info, "node": node_info}
+ACTIONS = {"python": python_action, "go": go_action, "rust": rust_action, "java": java_action, "ruby": ruby_action, "node": node_action}
+
+
+def _mark_removable(info):
+    """У установок Homebrew — имя формулы и признак «можно удалить из панели» (не выбранная по умолчанию, не та, на которой работает панель)."""
+    sel = info.get("selected")
+    me = os.path.realpath(sys.executable)
+    for i in info.get("installs") or []:
+        f = brew_formula_of(i) if i.get("source") == "Homebrew" else None
+        i["formula"] = f
+        i["removable"] = bool(f) and i.get("id") != sel and i.get("real") != me
+    return info
 
 
 def lang_info(q):
     key = q.get("key", "")
-    return INFO[key](q) if key in INFO else generic_info(key)
+    return _mark_removable(INFO[key](q)) if key in INFO else generic_info(key)
 
 
 def lang_action(body):

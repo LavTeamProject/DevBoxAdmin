@@ -130,6 +130,7 @@ GET_ROUTES = {
     "/api/node/remote": lambda q: herdphp.node_remote(),
     "/api/runtimes": uihelpers.nav_info,
     "/api/lang": runtimes.lang_info,
+    "/api/lang/versions": runtimes.brew_versions,
     "/api/herd": lambda q: herdphp.herd_info(),
     "/api/herd/logs": herdphp.herd_logs,
     "/api/herd/suggest": herdphp.herd_suggest,

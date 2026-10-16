@@ -117,7 +117,8 @@ function makeLangTab(key) {
             <div class="meta"><code>${esc(i.home || i.bin)}</code></div></div>
           <div class="actions">${d.selectable && sel !== i.id ? btn(t("lang.makeDefault"), "langAct", { key, action: "select", id: i.id }, "primary") : ""}
             ${key === "python" && i.removable ? btn(t("lang.uninstall"), "langAct", { key, action: "uninstall", id: i.id, job: 1, confirm: t("lang.confirmUninstallVersion", { v: i.version || "", src: i.source }) }, "danger")
-              : key === "python" ? `<span class="muted small" title="${esc(sel === i.id ? t("lang.cantRemoveDefault") : ["Homebrew", "uv", "pyenv"].includes(i.source) ? t("lang.cantRemovePanel") : t("lang.cantRemoveSource", { src: i.source }))}">${esc(t("lang.cantRemove"))}</span>` : ""}</div>
+              : key !== "python" && i.removable ? btn(t("lang.uninstall"), "langBrewAct", { formula: i.formula, action: "uninstall", confirm: t("lang.confirmUninstallVersion", { v: i.version || "", src: i.source }) }, "danger")
+              : (key === "python" || i.formula) ? `<span class="muted small" title="${esc(sel === i.id ? t("lang.cantRemoveDefault") : ["Homebrew", "uv", "pyenv"].includes(i.source) ? t("lang.cantRemovePanel") : t("lang.cantRemoveSource", { src: i.source }))}">${esc(t("lang.cantRemove"))}</span>` : ""}</div>
         </div>`).join("")}</div>` : "";
       view.innerHTML = `
         <p style="margin:0 0 12px"><a href="#langs">${esc(t("lang.backLink"))}</a></p>
@@ -129,14 +130,33 @@ function makeLangTab(key) {
         </div>
         ${(LANG_RENDER[key]?.warn?.(d)) || ""}
         ${installs}
+        ${BREW_VERSION_LANGS.includes(key) ? `<div id="verCard"></div>` : ""}
         ${d.selectable ? `<p class="muted small">${key === "java"
           ? t("lang.javaNote")
           : t("lang.otherNote")}</p>` : ""}
         ${LANG_RENDER[key]?.body?.(d) || genericBody(d)}`;
       LANG_RENDER[key]?.bind?.(d);
+      if (BREW_VERSION_LANGS.includes(key)) fillVersions(key);
     },
   };
 }
+
+// Версии из Homebrew (в том числе старые): список доступных версионных формул, «Поставить» / «Удалить». Homebrew держит только поддерживаемые версии.
+const BREW_VERSION_LANGS = ["node", "go", "java", "ruby"];
+async function fillVersions(key) {
+  const box = $("verCard");
+  if (!box) return;
+  box.innerHTML = `<h2>${esc(t("lang.brewVersions"))}</h2><div class="loading">${esc(t("shell.loading"))}</div>`;
+  let v;
+  try { v = await api(`/api/lang/versions?key=${key}`); } catch (e) { box.innerHTML = `<h2>${esc(t("lang.brewVersions"))}</h2>${errBlock(e.message)}`; return; }
+  if (!v.supported) { box.innerHTML = ""; return; }
+  box.innerHTML = `<h2>${esc(t("lang.brewVersions"))}</h2><p class="muted small">${esc(t("lang.brewVersionsNote"))}</p>
+    ${tableOf([t("lang.thFormula"), t("common.version"), t("pkg.thOrigin"), ""], v.available.map((r) => `<tr><td><code>${esc(r.formula)}</code></td>
+      <td>${esc(r.latest ? t("lang.latest") : r.version)}</td><td>${r.installed ? `<span class="badge green">${esc(t("lang.installedBadge"))}</span>` : `<span class="muted small">${esc(t("lang.availableBadge"))}</span>`}</td>
+      <td><div class="actions">${r.installed ? btn(t("lang.uninstall"), "langBrewAct", { formula: r.formula, action: "uninstall", confirm: t("lang.confirmUninstall", { name: r.formula }) }, "danger")
+        : btn(t("profiles.install"), "langBrewAct", { formula: r.formula, action: "install" }, "go")}</div></td></tr>`))}`;
+}
+handlers.langBrewAct = (d) => runJob(api("/api/apps/action", { name: d.formula, type: "formula", action: d.action }), () => current.load());
 
 function genericBody(d) {
   return `<h2>${esc(t("lang.info"))}</h2><div class="card"><dl class="kv">
@@ -302,3 +322,6 @@ handlers.langAct = async (d) => {
   await current.load();
   refreshNav();
 };
+
+// Node.js: версии из Homebrew (node, node@N) и выбор основной — общая страница языка (прежняя страница nvm заменена: единый менеджер — Homebrew)
+tabs.node = makeLangTab("node");
